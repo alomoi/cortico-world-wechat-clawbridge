@@ -49,12 +49,7 @@
     "icon.png"
   ],
   "scripts": {
-    "describe": "node tools/describe.mjs",
-    "check": "node tools/check.mjs",
-    "selfcheck": "node tools/check.mjs",
-    "test": "node --test",
-    "drymount": "node --experimental-transform-types tools/drymount.mts",
-    "prepublishOnly": "node tools/check.mjs"
+    "describe": "node tools/describe.mjs"
   },
   "dependencies": {
     "jimp": "^1.6.1",
