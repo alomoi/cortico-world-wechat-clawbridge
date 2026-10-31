@@ -1,121 +1,89 @@
-# 发布指南：GitHub + npm
+# 发布记录：GitHub + npm
 
-> 目标：把仓库开源到 GitHub，再把包发到 npm，让人能在 Coopanion 扩展市场搜到。
-> **只有两步需要你本人**：装 Git + 用你的账号推送/发布。其余都已准备好。
+> 状态：✅ **已上线**（2026-10-31）
+> 仓库：https://github.com/alomoi/cortico-world-wechat-clawbridge
+> npm：https://www.npmjs.com/package/cortico-world-wechat-clawbridge
 
-## 现状（v1.6.3）
+## 最终结果
 
-| 项 | 状态 |
+| 项 | 结果 |
 |---|---|
-| 包名 | `cortico-world-wechat-clawbridge` |
-| 版本 | 1.6.3 |
-| `private` | ✅ 已移除（否则 npm 拒绝发布） |
-| 仓库字段 | ✅ 指向 `alomoi/cortico-world-wechat-clawbridge` |
-| 关键字 | ✅ 含 `cortico-world`（市场靠它检索） |
-| 市场卡片 | ✅ 中文/英文显示名与简介、图标 `icon.png` |
-| describe.json | ✅ 3 个工具 + 1 个事件 |
-| 要公开的文件 | 42 个，约 259 KB（已扫描：无真实微信 ID、无密钥） |
+| GitHub 仓库 | public，MIT，43 个文件 |
+| 提交 | `e59c573`（首发）→ `3de37e2`（清理失效 scripts） |
+| 标签 | `v1.6.3` |
+| npm | `cortico-world-wechat-clawbridge@1.6.3` |
+| 包内容 | 28 个文件，185 KB（解包），依赖 jimp/qrcode/undici |
+| 市场索引 | `Pal-AI-Lab/cortico-extensions` 定期扫 npm，通常几小时到一天后收录 |
 
-## 第 1 步：装 Git
+## 这次踩的坑（重要，下次别再踩）
 
-```powershell
-winget install --id Git.Git -e --source winget
-```
+### 1. npm 官网被 Cloudflare 拦机房 IP
+- 客户机出口是东京机房 IP → `www.npmjs.com` 全站 403，`registry.npmjs.org` 却 200
+- 直连大陆家宽同样打不开官网（TLS 直接断）
+- **注册/建 token 只能在能打开官网的网络里做**（境外住宅 IP、手机蜂窝等）
 
-装完**重开终端**，确认 `git --version` 有输出。然后配置身份（只需一次）：
+### 2. pnpm 11 不再读 package.json 的 `pnpm` 字段
+- 会打印 `The "pnpm" field in package.json is no longer read by pnpm`
+- 设置要放 `pnpm-workspace.yaml`（这里放的是 `strictDepBuilds: false`，
+  否则安装 esbuild 时 `ERR_PNPM_IGNORED_BUILDS` 会让 `pnpm install` 退出码 1）
 
-```powershell
-git config --global user.name "alomoi"
-git config --global user.email "你的邮箱"
-```
+### 3. `prepublishOnly` 指向不存在的文件
+- 早期遗留的 `scripts` 里有 `prepublishOnly: node tools/check.mjs`，
+  而 `tools/check.mjs` 早已删除 → `pnpm publish` 最后一步必失败
+- 发布前务必 `pnpm pack --dry-run` 走一遍
 
-## 第 2 步：建 GitHub 仓库
+### 4. 新包首发走「暂存发布」（staged publishing）
+- 第一次 `pnpm publish` 后，registry 上只看到 `0.0.0-stage` 占位版本
+- 稍等再查（或换 URL 参数绕缓存）就能看到 `1.6.3`，`dist-tags.latest` 也会指向它
+- 再发一次会报 `cannot publish over ...` —— 那说明**上一条其实成功了**，别慌
 
-<https://github.com/new>
+### 5. granular token 的权限要点
+- `Packages and scopes` 必须选 **Read and write (publish and stage)**
+- 必须选 **All packages**，否则发不了新包
+- 账号开了 2FA 时，CLI 发布要么带 `--otp=123456`，要么用勾了
+  **Bypass two-factor authentication** 的 token
+- 这种 bypass token 相当于"无 2FA 的发布权"，**用完必须吊销**
 
-- 仓库名：`cortico-world-wechat-clawbridge`
-- **不要**勾 README / .gitignore / license（本地已有）
+### 6. token 存放的位置不止一个
+- `pnpm config set //registry.npmjs.org/:_authToken=...` 写的是 **pnpm 自己的配置文件**，
+  `~/.npmrc` 可能根本不存在 → npm CLI / `npm stage` 读不到，会 401
+- 两个工具混用时，直接写 `~/.npmrc` 最保险
 
-## 第 3 步：推送
+### 7. Git for Windows 的小问题
+- `credential.helper` 指到带空格的路径（`C:/Program Files/...`）会被 shell 截断 →
+  用 8.3 短路径或把目录加进 PATH
+- 本机 GCM（Git Credential Manager）一启动就崩（`0xE0434352` .NET 异常），
+  退回 `credential.helper = wincred`
+- 代理软件若是 TUN/全局模式，git 仍可能不走代理 → 显式
+  `git config --global http.proxy` / `https.proxy`
 
-```powershell
-cd "D:\文档\deepseek-harness\default-workspace\clawbridge"
-git init -b main
-git add .
-git status
-```
-
-**先看 `git status`**：应该只有 42 个文件，不应该出现 `tests/`、`node_modules/`、`dist/`、`docs/fish-handoff.md`。
-确认无误再：
-
-```powershell
-git commit -m "feat: 微信 ClawBridge 1.6.3 — 把微信 ClawBot 接到 Coopanion 桌宠"
-git remote add origin https://github.com/alomoi/cortico-world-wechat-clawbridge.git
-git push -u origin main
-```
-
-> GitHub 已不接受账号密码，需要 **Personal Access Token**：
-> Settings → Developer settings → Personal access tokens → 勾 `repo`。
-> 用户名填 `alomoi`，密码处粘贴 token。
-> 嫌麻烦可以用 [GitHub Desktop](https://desktop.github.com/)。
-
-## 第 4 步：发到 npm
-
-```powershell
-cd "D:\文档\deepseek-harness\default-workspace\clawbridge\plugin"
-pnpm login
-pnpm publish --access public
-```
-
-常见问题：
-
-| 情况 | 处理 |
-|---|---|
-| 包名被占用 | 改用 scope：`@alomoi/cortico-world-wechat-clawbridge`（改 `package.json` 的 `name`），`cortico-world` 关键字必须保留 |
-| 要求 2FA | `pnpm publish --access public --otp=123456` |
-| 想先看看会发哪些文件 | `pnpm pack` 后 `tar -tzf *.tgz` |
-
-发完确认：
-
-```powershell
-npm view cortico-world-wechat-clawbridge version
-```
-
-## 第 5 步：挂 Release（可选，给离线包用）
-
-GitHub 仓库 → Releases → Draft a new release：
-
-- Tag：`v1.6.3`
-- 附件：`dist/offline/cortico-world-wechat-clawbridge-1.6.3-offline.tgz`、`install.bat`、`install.ps1`、`INSTALL.txt`
-
-这样 README 里"去 Releases 下载离线包"这条路径才成立。
-
-## 第 6 步：验证市场
-
-1. 打开 Coopanion 的扩展市场，搜 `cortico-world` 或 `微信`
-2. 找到后安装（从 npm 拉包，依赖自动装好）
-3. 启用 → 「微信绑定」面板 → 扫码
-
-> 市场索引在 `Pal-AI-Lab/cortico-extensions`，由 Action 扫 npm 生成 `catalog.json`，
-> 所以**发 npm 之后要等它扫一轮**（当天到一天不等）。
-
-## 之后每次发版
+## 下次发版的流程
 
 ```powershell
 # 1) 改 plugin/package.json 的 version
-# 2) 重新打包并自检
+# 2) 自检
 cd plugin
-pnpm pack
-node tools/build-offline.mjs   # 需要离线包时
-# 3) 发布
+pnpm pack --dry-run
+node tools/describe.mjs
+
+# 3) 发布（token 只在需要时临时设置）
+pnpm config set //registry.npmjs.org/:_authToken=npm_xxx
 pnpm publish --access public
-# 4) 打 tag 并推
-git tag v1.6.4 && git push --tags
+pnpm config delete //registry.npmjs.org/:_authToken
+
+# 4) 仓库打标签
+cd ..
+git add -A
+git commit -m "release: 1.6.x"
+git tag -a v1.6.x -m "1.6.x"
+git push && git push --tags
+
+# 5) 重打离线包并挂到 Release
+cd plugin && node tools/build-offline.mjs
 ```
 
-## 我（大肥鱼）没法代做的
+## 备用方案：GitHub Actions 自动发布
 
-- GitHub 账号与 token（推送）
-- npm 账号与 token（发布）
-
-这两步之后，验证、排错、市场收录检查我都能接。
+如果官网长期进不去、token 难办，可以改成「打 tag 自动发布」：
+把 bypass token 存进仓库 Secrets（`NPM_TOKEN`），Action 在 GitHub 的网络上跑
+`pnpm publish`。这样本机永远不需要保存 token。需要时再补这个 workflow。
