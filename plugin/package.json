@@ -1,0 +1,91 @@
+{
+  "name": "cortico-world-wechat-clawbridge",
+  "version": "1.6.3",
+  "type": "module",
+  "description": "把微信 ClawBot 接到 Coopanion 桌宠：收发消息、收图片、发表情包、显示正在输入。",
+  "license": "MIT",
+  "author": {
+    "name": "大肥鱼 (BigFatFish)"
+  },
+  "contributors": [
+    {
+      "name": "AqualCross",
+      "url": "https://github.com/AqualCross/cortico-world-clawbot"
+    }
+  ],
+  "homepage": "https://github.com/alomoi/cortico-world-wechat-clawbridge#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alomoi/cortico-world-wechat-clawbridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/alomoi/cortico-world-wechat-clawbridge/issues"
+  },
+  "keywords": [
+    "cortico-world",
+    "cortico",
+    "coopanion",
+    "wechat",
+    "weixin",
+    "clawbot",
+    "clawbridge",
+    "ilink",
+    "chat",
+    "pet"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "describe.json",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE",
+    "icon.png"
+  ],
+  "scripts": {
+    "describe": "node tools/describe.mjs",
+    "check": "node tools/check.mjs",
+    "selfcheck": "node tools/check.mjs",
+    "test": "node --test",
+    "drymount": "node --experimental-transform-types tools/drymount.mts",
+    "prepublishOnly": "node tools/check.mjs"
+  },
+  "dependencies": {
+    "jimp": "^1.6.1",
+    "qrcode": "^1.5.4",
+    "undici": "^8.12.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "微信 ClawBridge",
+    "tags": [
+      "im"
+    ],
+    "webUiClient": "src/webui/client.js",
+    "describe": "describe.json",
+    "locales": {
+      "zh": {
+        "displayName": "微信 ClawBridge",
+        "description": "把微信接到桌宠身上：在微信里和她聊天，她能看图片、发表情包、显示正在输入。"
+      },
+      "en": {
+        "displayName": "WeChat ClawBridge",
+        "description": "Chat with your desktop pet on WeChat: she sees your photos, sends stickers, and shows a typing indicator."
+      }
+    },
+    "icon": "icon.png"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

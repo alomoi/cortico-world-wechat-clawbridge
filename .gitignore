@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules/
+build-offline/
+/dist/
+*.tgz
+*.log
+
+# 只排除仓库根目录的这几个目录（plugin/tools 要保留）
+/tests/
+/tools/
+/legacy/
+/misc/
+
+# 不外发的内部资料
+docs/fish-handoff.md
+docs/milestones.md
+docs/clawbot-plan.md
+
+# 系统与编辑器
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
