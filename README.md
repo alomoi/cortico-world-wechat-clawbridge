@@ -12,7 +12,14 @@
 
 ### 离线包（推荐，双击即可）
 
-下载对应版本的 `*-offline.tgz` 与 `install.bat`、`install.ps1`，放在同一个文件夹：
+下载页 👉 [**Releases**](https://github.com/alomoi/cortico-world-wechat-clawbridge/releases/latest)，
+把这三个文件下到同一个文件夹：
+
+- `cortico-world-wechat-clawbridge-1.6.3-offline.tgz`
+- `install.bat`
+- `install.ps1`
+
+然后：
 
 1. 完全退出 Coopanion（含托盘图标）
 2. 双击 `install.bat`
@@ -25,6 +32,8 @@
 ```bash
 pnpm add cortico-world-wechat-clawbridge
 ```
+
+装好后在 Coopanion 里启用该 World，打开「微信绑定」面板扫码即可。
 
 ## 功能一览
 
