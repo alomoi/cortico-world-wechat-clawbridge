@@ -1,6 +1,6 @@
 # 发布记录：GitHub + npm
 
-> 状态：✅ **已上线**（2026-10-31）
+> 状态：✅ **已上线**（1.6.3 于 2026-10-31，1.6.4 于 2026-11-01）
 > 仓库：https://github.com/alomoi/cortico-world-wechat-clawbridge
 > npm：https://www.npmjs.com/package/cortico-world-wechat-clawbridge
 
@@ -8,14 +8,39 @@
 
 | 项 | 结果 |
 |---|---|
-| GitHub 仓库 | public，MIT，43 个文件 |
-| 提交 | `e59c573`（首发）→ `3de37e2`（清理失效 scripts） |
-| 标签 | `v1.6.3` |
-| npm | `cortico-world-wechat-clawbridge@1.6.3` |
+| GitHub 仓库 | public，MIT，43 个文件（0.26 MB） |
+| 最新提交 | `34c84ca`（1.6.4） |
+| 标签 / Release | `v1.6.3`、`v1.6.4`（各带 4 个离线安装附件） |
+| npm | `@1.6.4`（latest 指向它） |
 | 包内容 | 28 个文件，185 KB（解包），依赖 jimp/qrcode/undici |
 | 市场索引 | `Pal-AI-Lab/cortico-extensions` 定期扫 npm，通常几小时到一天后收录 |
 
+## 发版流程（现在由大肥鱼代发）
+
+主人把 token 给本鱼 → 本鱼写进 `~/.npmrc` → `pnpm publish` → **发布后立刻删掉 token**。
+
+> 更安全的做法：把 token 存成 `D:\文档\deepseek-harness\default-workspace\.npm-token` 文件，
+> 本鱼读文件、不打印，就不必经过聊天记录。
+
 ## 这次踩的坑（重要，下次别再踩）
+
+### 8. 发布成功后查不到 1.6.4，不是失败，是 CDN 缓存
+- `pnpm publish` 返回 `✅ Published`，但 `registry.npmjs.org/<包>/1.6.4` 一直 **404**，
+  packument 里也还只有 1.6.3 —— 连等 45 秒都没变。
+- 真相：**registry 的 CDN 边缘缓存没刷新**。
+- 可靠的验证方法（按顺序）：
+  1. `npm view <包> versions --json`（带鉴权，走的是另一条缓存路径）
+  2. `npm view <包> dist-tags --json` 看 latest 指到哪
+  3. **jsDelivr 镜像**读实际文件：`https://cdn.jsdelivr.net/npm/<包>@<版本>/package.json`
+  4. 直接 HEAD tarball：`https://registry.npmjs.org/<包>/-/<包>-<版本>.tgz`
+- 结论：**别再因为匿名查询 404 就以为发布失败、然后重发一次**（重发会报 `cannot publish over`）。
+
+### 9. 安装脚本必须核对「版本」，不能只看「包在不在」
+- `install.ps1` 原先只检查 `node_modules/<包>/package.json` 是否存在。
+- 实测：pnpm 因 `ERR_PNPM_NO_OFFLINE_META` 挂了，但旧版本还在目录里 →
+  脚本兴高采烈打印「✅ 已安装 1.6.3」，其实**一步都没做**。
+- 修法：先从 tgz 里读出应有的版本，装完逐个比对；不一致就报错，并在报错里给出日志路径。
+- 另外：`--offline` 解析不到元数据时（包已发布到 npm 会更常见），要**自动退回联网安装**。
 
 ### 1. npm 官网被 Cloudflare 拦机房 IP
 - 客户机出口是东京机房 IP → `www.npmjs.com` 全站 403，`registry.npmjs.org` 却 200
