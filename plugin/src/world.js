@@ -27,7 +27,7 @@ import { DEFAULT_MAX_BYTES } from './media.js';
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
-import { splitScript } from './segments.js';
+import { limitSegments, splitLongText, splitScript } from './segments.js';
 import { isInsideAny } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
@@ -222,15 +222,29 @@ export class ClawbotWorld {
     if (segments.length === 0 && imageRefs.length === 0) {
       return { text: failedReceipt('内容为空'), failed: true };
     }
-    if (segments.some((segment) => countChars(segment) > MAX_TEXT_CHARS)) {
-      return { text: failedReceipt(`超长(${MAX_TEXT_CHARS})`), failed: true };
+
+    // 单条超长不报错，自动按段落/句子切成多条（微信上限 4000）。
+    // 注意：只切「自己太长的那一段」，不动 `【…】` 明确要求的语义分段。
+    const expanded = [];
+    for (const segment of segments) {
+      if (countChars(segment) <= MAX_TEXT_CHARS) expanded.push(segment);
+      else expanded.push(...splitLongText(segment, MAX_TEXT_CHARS));
+    }
+    const capped = limitSegments(expanded, { maxSegments: this.#maxSegments() });
+    const outSegments = capped.segments;
+    if (capped.dropped > 0) {
+      this.#host?.log?.warn?.('clawbridge: 回复超过条数上限，尾部已截断', { dropped: capped.dropped });
     }
 
     const driver = this.#driver;
     if (!driver || !this.#auth?.token) return { text: failedReceipt('未连接'), failed: true };
 
-    const to = this.#lastUserId || this.#auth.userId;
-    if (!to) return { text: failedReceipt('他还没先说话'), failed: true };
+    // 收件人钉死在绑定记录里，绝不跟随入站消息（防换号/异物消息串台）
+    const to = String(this.#auth?.userId ?? '').trim();
+    if (!to) {
+      // 老绑定可能没存 userId：提示很明确，别让人以为是没扫码
+      return { text: failedReceipt('还不知道微信是哪一位，等对方先发一条消息'), failed: true };
+    }
 
     const contextToken = await this.#store.getContextToken(to);
     if (!contextToken) return { text: failedReceipt('上下文已过期'), failed: true };
@@ -238,13 +252,13 @@ export class ClawbotWorld {
     // 真要发东西了，先撤掉「正在输入」
     try { await driver.stopTyping?.(to); } catch { /* 无所谓 */ }
 
-    const total = segments.length + imageRefs.length;
+    const total = outSegments.length + imageRefs.length;
     let chars = 0;
     let sent = 0;
     let textSent = 0;
     let imageSent = 0;
 
-    for (const segment of segments) {
+    for (const segment of outSegments) {
       try {
         await driver.sendText({ to, text: segment, contextToken });
       } catch (err) {
@@ -544,7 +558,7 @@ export class ClawbotWorld {
     this.#driver = null;
     this.#lastError = '';
     if (driver) await driver.stop();
-    this.#startDriver();
+    await this.#startDriver();
     this.#host?.log?.info?.('clawbot: 手动重连');
     return this.#publicState();
   }
@@ -771,7 +785,7 @@ export class ClawbotWorld {
     this.#login.qrDataUrl = '';
     this.#login.qrUrl = '';
     this.#login.verifyCode = '';
-    this.#startDriver();
+    await this.#startDriver();
     this.#host?.log?.info?.('clawbot: 微信绑定成功', { accountId, userId: shortId(userId) });
   }
 
@@ -894,19 +908,22 @@ export class ClawbotWorld {
     }
     this.#started = true;
     if (this.#auth?.token) {
-      this.#startDriver();
+      await this.#startDriver();
     } else {
       host?.log?.info?.('clawbot: 尚未绑定微信，等待扫码');
     }
   }
 
-  #startDriver() {
+  async #startDriver() {
     const previous = this.#driver;
     this.#driver = null;
     if (previous) {
-      previous.stop().catch((err) => {
+      // 必须等旧连接停稳，否则两个驱动各带游标，会抢消息、重复回复
+      try {
+        await previous.stop();
+      } catch (err) {
         this.#host?.log?.warn?.('clawbot: 旧连接关闭失败', { error: msgOf(err) });
-      });
+      }
     }
     this.#expired = false;
 
@@ -934,6 +951,10 @@ export class ClawbotWorld {
       this.#handleExpired(driver);
       return;
     }
+    if (status.paused) {
+      this.#lastError = '微信会话暂停，约一小时后自动重试（不用重新扫码）';
+      return;
+    }
     this.#lastError = status.error || 'disconnected';
   }
 
@@ -944,6 +965,8 @@ export class ClawbotWorld {
     this.#driver = null;
     this.#auth = null;
     this.#contextCount = 0;
+    // 换号/过期后必须清掉上一任的痕迹，否则新号绑定后第一条回复会发给旧号
+    this.#lastUserId = '';
     driver.stop().catch(() => {});
     this.#store.clearSession().catch((err) => {
       this.#host?.log?.warn?.('clawbot: 清理过期会话失败', { error: msgOf(err) });
@@ -956,6 +979,26 @@ export class ClawbotWorld {
     const from = String(message?.from_user_id ?? '').trim();
     if (!from) return;
     if (this.#auth?.accountId && from === this.#auth.accountId) return;
+
+    // 只接受绑定本人发来的消息：不是本人的，丢弃且不进上下文、不存 token。
+    // 这样即使外部混进别人的消息，也不可能把回复发到陌生人那里。
+    const owner = String(this.#auth?.userId ?? '').trim();
+    if (owner) {
+      if (from !== owner) {
+        this.#host?.log?.warn?.('clawbridge: 非绑定本人发来的消息，已忽略', { from: shortId(from) });
+        return;
+      }
+    } else if (this.#auth) {
+      // 兼容老绑定：`ilink_user_id` 是可选字段，早期绑定记录里可能没有 userId。
+      // 这种情况下认领「第一条消息的发送者」为本人并写回，之后严格比对（只认领一次）。
+      this.#auth.userId = from;
+      try {
+        await this.#store.saveAuth(this.#auth);
+        this.#host?.log?.info?.('clawbridge: 绑定记录缺 userId，已认领首条消息的发送者', { from: shortId(from) });
+      } catch (err) {
+        this.#host?.log?.warn?.('clawbridge: 认领本人失败', { error: msgOf(err) });
+      }
+    }
 
     const contextToken = String(message?.context_token ?? '').trim();
     if (contextToken) {

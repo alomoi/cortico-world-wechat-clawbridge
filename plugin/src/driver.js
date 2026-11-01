@@ -29,6 +29,14 @@ const TYPING_REFRESH_MS = 4000;
  */
 const TYPING_MAX_MS = 60_000;
 
+/**
+ * 收到 `-14` 时的账号会话暂停时长。
+ *
+ * 官方协议文档写着：`getUpdates` 出现 `-14` 时「触发一小时的账号会话暂停」，
+ * 是暂停而不是永久失效——所以这里等一小时再继续，不要去清凭据逼用户重扫。
+ */
+const SESSION_PAUSE_MS = 60 * 60 * 1000;
+
 export class ILinkDriver {
   #auth;
   #store;
@@ -42,6 +50,8 @@ export class ILinkDriver {
   #abort = null;
   #wake = null;
   #pollTimeoutMs;
+  /** 收到 -14 后暂停多久再继续（可注入，方便测试） */
+  #sessionPauseMs;
   /** user → typing ticket */
   #typingTickets = new Map();
   /** 入站消息去重（有上限的 FIFO） */
@@ -65,6 +75,7 @@ export class ILinkDriver {
     pollTimeoutMs = 35000,
     reconnectBaseMs = 1000,
     reconnectMaxMs = 30000,
+    sessionPauseMs = SESSION_PAUSE_MS,
   }) {
     this.#auth = auth;
     this.#store = store;
@@ -76,6 +87,7 @@ export class ILinkDriver {
     this.#pollTimeoutMs = pollTimeoutMs;
     this.#reconnectBaseMs = reconnectBaseMs;
     this.#reconnectMaxMs = reconnectMaxMs;
+    this.#sessionPauseMs = sessionPauseMs;
   }
 
   get identity() {
@@ -315,9 +327,20 @@ export class ILinkDriver {
         if (this.#stopped) return;
 
         if (Number(response?.errcode) === -14) {
+          // 官方约定：-14 是「账号会话暂停一小时」，不是永久失效。
+          // 所以保留凭据、暂停后继续，不逼用户重新扫码。
           this.connected = false;
-          this.#emit({ connected: false, expired: true, error: 'session expired' });
-          return;
+          const pauseMs = this.#sessionPauseMs;
+          this.#emit({
+            connected: false,
+            paused: true,
+            resumeInMs: pauseMs,
+            error: '微信会话暂停，稍后自动重试',
+          });
+          this.#log?.warn?.('ilink: 收到 -14，暂停后重试', { pauseMs });
+          await this.#sleep(pauseMs);
+          backoff = this.#reconnectBaseMs;
+          continue;
         }
         if (response?.ret !== undefined && response.ret !== 0) {
           throw new ILinkError(

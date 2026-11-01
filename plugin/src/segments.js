@@ -125,3 +125,69 @@ export function splitScript(script, {
   }
   return { segments, markers, truncated };
 }
+
+/** 句末标点：中文全角与英文半角都算。 */
+const SENTENCE_END = /[。！？；…!?;\n]/;
+
+/** 硬切时不要把 UTF-16 代理对拆成两半。 */
+function safeCut(text, index) {
+  if (index <= 0 || index >= text.length) return index;
+  const code = text.charCodeAt(index - 1);
+  return code >= 0xd800 && code <= 0xdbff ? index - 1 : index;
+}
+
+/**
+ * 把一段长文本切成每段不超过 `limit` 的若干段。
+ *
+ * 切点优先级：段落（换行）→ 句子（句末标点）→ 硬切（不拆代理对）。
+ * 微信单条文本上限 4000 字，超过会被服务端拒收，所以这一步必须做。
+ */
+export function splitLongText(text, limit) {
+  const source = String(text ?? '');
+  const max = Math.max(1, Math.floor(Number(limit) || 1));
+  if (countChars(source) <= max) return [source];
+
+  const parts = [];
+  let rest = source;
+
+  while (countChars(rest) > max) {
+    // 按字符（而非码元）取窗口，保证不会先超限
+    const window = [...rest].slice(0, max).join('');
+    let cut = window.lastIndexOf('\n');
+    if (cut < window.length * 0.5) {
+      for (let i = window.length - 1; i >= 0; i -= 1) {
+        if (SENTENCE_END.test(window[i])) {
+          cut = i + 1;
+          break;
+        }
+      }
+    }
+    if (cut < window.length * 0.3) cut = safeCut(rest, window.length);
+    if (cut <= 0) cut = window.length; // 兜底：至少前进一段
+
+    const piece = rest.slice(0, cut).trimEnd();
+    if (piece) parts.push(piece);
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) parts.push(rest);
+  return parts.length > 0 ? parts : [source];
+}
+
+/**
+ * 把段数收敛到最多 `maxSegments` 条。
+ *
+ * **只截断，不合并**：`【…】` 是作者/桌宠明确要求的分条语义，
+ * 自动合并会把「第一句 / 第二句」又粘回一条，等于悄悄改了人家的排版。
+ * 超出条数上限时只保留前 `maxSegments` 条，并如实报告丢了多少字。
+ */
+export function limitSegments(pieces, { maxSegments = 4 } = {}) {
+  const max = Math.max(1, Math.floor(Number(maxSegments) || 1));
+  const kept = [];
+  for (const piece of pieces) {
+    const value = String(piece ?? '').trim();
+    if (value) kept.push(value);
+  }
+  if (kept.length <= max) return { segments: kept, dropped: 0 };
+  const droppedText = kept.slice(max).join('');
+  return { segments: kept.slice(0, max), dropped: countChars(droppedText) };
+}

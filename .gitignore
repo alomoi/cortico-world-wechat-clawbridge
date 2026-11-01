@@ -13,6 +13,7 @@ build-offline/
 
 # 不外发的内部资料
 docs/fish-handoff.md
+docs/coopanion-plugin-guide.md
 docs/milestones.md
 docs/clawbot-plan.md
 

@@ -38,6 +38,8 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
+  // 保留 UTF-8：默认会把中文转义成 \uXXXX，日志和回执在包里会变得不可读
+  charset: 'utf8',
   outfile: join(STAGE, 'dist', 'index.js'),
   banner: {
     js: [
