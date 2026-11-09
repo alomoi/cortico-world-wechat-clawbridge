@@ -389,7 +389,8 @@ export class ClawbotWorld {
       fileSent ? `${fileSent}文件` : '',
     ].filter(Boolean).join('+');
 
-    this.#host?.log?.info?.('clawbridge: 已发送微信消息', {
+    // 消息本体带关键数字：INFO 级日志不展开 detail 对象，只有写进字符串才看得见
+    this.#host?.log?.info?.(`clawbridge: 已发送微信消息 ${sent}条(${detail || '—'}) ${chars}字`, {
       to: shortId(to),
       messages: sent,
       text: textSent,
@@ -1181,21 +1182,21 @@ export class ClawbotWorld {
         if (result.removed > 0) {
           removed += result.removed;
           bytes += result.bytes;
-          this.#host?.log?.info?.('clawbridge: 清理过期文件', {
-            dir: dir.split(/[\\/]/).pop(),
-            ...result,
-          });
+          const dirName = dir.split(/[\\/]/).pop();
+          this.#host?.log?.info?.(
+            `clawbridge: 清理 ${dirName} 删除 ${result.removed} 个（保留 ${result.kept}，${Math.round(result.bytes / 1024)} KB）`,
+            { dir: dirName, ...result },
+          );
         }
       } catch (err) {
         this.#host?.log?.warn?.('clawbridge: 清理失败', { error: msgOf(err) });
       }
     }
     if (removed > 0) {
-      this.#host?.log?.info?.('clawbridge: 清理完成', {
-        removed,
-        kb: Math.round(bytes / 1024),
-        days,
-      });
+      this.#host?.log?.info?.(
+        `clawbridge: 清理完成 共删 ${removed} 个 / ${Math.round(bytes / 1024)} KB（保留 ${days} 天）`,
+        { removed, kb: Math.round(bytes / 1024), days },
+      );
     }
   }
 

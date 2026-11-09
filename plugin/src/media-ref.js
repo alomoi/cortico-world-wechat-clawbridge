@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 
 import { downloadMedia, saveBlob, sniffVideoExt } from './media.js';
-import { saveNamedFile, sanitizeFileName } from './files.js';
+import { saveNamedFile, sanitizeFileName, formatBytes } from './files.js';
 
 const MEDIA_KIND = { 2: 'image', 3: 'voice', 4: 'file', 5: 'video' };
 
@@ -288,6 +288,9 @@ export async function captureMediaItems({
         bytes: result.bytes.length,
         downloadedAt: new Date().toISOString(),
       });
+      // INFO 级日志不会打印对象（Coopanion 的日志器只在 WARN/ERROR 展开 detail），
+      // 所以关键数字必须写进消息本体，否则事后无从核对。
+      log?.info?.(`clawbot: 收到${isVideo ? '视频' : '文件'} ${saved.name} ${formatBytes(result.bytes.length)}`);
     } catch (err) {
       const fallback = isVideo
         ? { skipped: err?.code === 'too-large' ? 'too-large' : 'failed', video: true, playtime, limit: maxFileBytes }
