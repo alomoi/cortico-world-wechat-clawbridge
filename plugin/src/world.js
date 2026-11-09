@@ -6,7 +6,7 @@
  * 语音用微信的转写文本；图片会下载解密后落盘，正文带本地路径。
  * 事件 meta 只保留精简信封，媒体凭证存在 `<dataDir>/clawbot/media/`。
  */
-import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
 import { basename, join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,7 +28,7 @@ import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
 import { limitSegments, splitLongText, splitScript } from './segments.js';
-import { isInsideAny, isInside } from './paths.js';
+import { isInsideAnyResolved } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
 import { DEFAULT_MAX_EDGE, DEFAULT_QUALITY, downscaleForModel } from './resize.js';
@@ -470,28 +470,24 @@ export class ClawbotWorld {
       throw Object.assign(new Error('文件不支持句柄'), { code: 'denied' });
     }
 
-    const root = this.#fileRoots()[0];
     const abs = resolve(value);
-    if (!isInside(abs, root)) throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+    if (!await isInsideAnyResolved(abs, this.#fileRoots())) {
+      throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+    }
 
-    let realRoot = root;
-    let realAbs = abs;
-    try { realRoot = resolve(await realpath(root)); } catch { /* 目录还不存在就算了 */ }
-    try { realAbs = resolve(await realpath(abs)); } catch { /* 交给下面的 stat 报错 */ }
-    if (!isInside(realAbs, realRoot)) throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
-
-    const info = await stat(realAbs);
+    const info = await stat(abs);
     if (!info.isFile()) throw Object.assign(new Error('不是文件'), { code: 'not-file' });
     if (info.size === 0) throw Object.assign(new Error('空文件'), { code: 'empty-file' });
     if (info.size > this.#maxFileBytes()) throw Object.assign(new Error('过大'), { code: 'too-large' });
-    return { bytes: await readFile(realAbs), name: basename(abs) };
+    return { bytes: await readFile(abs), name: basename(abs) };
   }
 
   /**
    * 把图片引用变成字节。
    *
-   * 支持三种：`log:` / `mem:` / `blob:` 句柄（走 host.blob），以及本地绝对路径
-   * （**只允许数据目录及其上一级**，防止被诱导发送机器上的任意文件）。
+   * 支持三种：`log:` / `mem:` / `blob:` 句柄（走 host.blob），`sticker:名字`（素材目录），
+   * 以及本地绝对路径（**只允许数据目录与工作区**，且按真实路径再校验一次，
+   * 防止被诱导发送机器上的任意文件）。
    */
   async #loadImageBytes(ref) {
     const value = String(ref ?? '').trim();
@@ -503,6 +499,10 @@ export class ClawbotWorld {
       const found = await findSticker(stickerName, this.#stickerRoots());
       if (!found) {
         throw Object.assign(new Error('表情不在素材表'), { code: 'sticker-missing', name: stickerName });
+      }
+      // 二次校验：表情名是模型给的，解析出来的路径必须仍在素材目录里
+      if (!await isInsideAnyResolved(found.path, this.#stickerRoots())) {
+        throw Object.assign(new Error('表情路径越界'), { code: 'denied' });
       }
       const info = await stat(found.path);
       if (info.size > this.#maxMediaBytes()) throw Object.assign(new Error('过大'), { code: 'too-large' });
@@ -518,8 +518,9 @@ export class ClawbotWorld {
     }
 
     const abs = resolve(value);
-    const allowed = isInsideAny(abs, this.#imageRoots());
-    if (!allowed) throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+    if (!await isInsideAnyResolved(abs, this.#imageRoots())) {
+      throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+    }
 
     const info = await stat(abs);
     if (!info.isFile()) throw Object.assign(new Error('不是文件'), { code: 'not-file' });

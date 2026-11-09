@@ -24,10 +24,19 @@
 - **体积与清理**：单件上限 `maxFileBytes`（默认 32 MiB），收侧先用事件里的 `len` 判，
   超了不下载只留占位；**不新增保留配置**，收下的文件跟图片一起按 `mediaRetentionDays`（默认 7 天）清理——
   要长期收藏就复制进工作区。
+- **【安全·用户反馈】表情包名不再直接拼路径**：原来 `sticker:<名字>` 的名字没过过滤就
+  `join(素材目录, `${名字}.${ext}`)`，名字里带 `..` 就能读到素材目录以外的 png/jpg/gif/webp，
+  绕过图片白名单（收件人固定是绑定本人，危害有限，但不该留）。现在：
+  - 名字先过 `safeStickerName`：拒绝 `/`、`\`、`.`、`..`、控制字符与超长；
+  - 解析出的路径必须仍在素材目录内；`index.json` 的别名值同样校验（人写的也会写错）。
+- **【安全】绝对路径改按真实路径校验**：图片与文件都走 `isInsideAnyResolved`（字面 + `realpath` 双重），
+  白名单目录里放一个指向外面的软链/目录联接（junction）也发不出去。
+  新增 `tests/s19-sticker-safety.mjs` 钉死这条回归。
 
 新增测试：`s15-file-toggle`（默认关闭、双向拦截）、`s16-file-paths`（消毒与白名单）、
-`s17-file-inbound`（下载解密、超限、关闸）、`s18-file-send`（协议字段逐项）。
-共 **27 个测试文件全绿**。真机探针见 `tools/file-probe.mjs`。
+`s17-file-inbound`（下载解密、超限、关闸）、`s18-file-send`（协议字段逐项）、
+`s19-sticker-safety`（表情包名越界）。
+共 **28 个测试文件全绿**。真机探针见 `tools/file-probe.mjs`。
 
 ## 1.6.4 · 安全与体验修正
 

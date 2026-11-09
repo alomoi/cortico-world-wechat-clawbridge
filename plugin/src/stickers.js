@@ -12,7 +12,9 @@
  * 所以素材由使用者自己放；`tools/make-stickers.py` 可以在本机一键生成一套自用。
  */
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+
+import { isInside } from './paths.js';
 
 /** 支持的图片扩展名（按优先级尝试）。 */
 export const STICKER_EXTS = Object.freeze(['png', 'jpg', 'jpeg', 'gif', 'webp']);
@@ -21,6 +23,31 @@ export const STICKER_EXTS = Object.freeze(['png', 'jpg', 'jpeg', 'gif', 'webp'])
 export function stickerNameOf(ref) {
   const m = /^sticker:(.+)$/i.exec(String(ref ?? '').trim());
   return m ? m[1].trim() : '';
+}
+
+/**
+ * 合法的表情名：不能带路径分隔符、不能是 `.`/`..`、不能有控制字符、不能过长。
+ *
+ * 表情名是模型（可能被用户诱导）给的字符串，会拼进文件路径——
+ * 不挡住 `../../x` 就等于把白名单写成了一张纸。
+ */
+export function safeStickerName(name) {
+  const value = String(name ?? '').trim();
+  if (!value || value.length > 100) return '';
+  if (/[\\/\u0000-\u001f\u007f]/.test(value)) return '';
+  if (value === '.' || value === '..') return '';
+  return value;
+}
+
+/**
+ * 在 root 下拼一个相对路径，越界就返回 null。
+ *
+ * `index.json` 的别名值同样来自本地配置，但它是「人写的」不代表「写对的」，
+ * 一起校验，省得哪天配错一个 `../../` 又把洞开回去。
+ */
+function insideRoot(root, relative) {
+  const abs = resolve(join(root, String(relative ?? '')));
+  return isInside(abs, root) ? abs : null;
 }
 
 const isFile = async (path) => {
@@ -40,7 +67,7 @@ const isFile = async (path) => {
  * @returns {Promise<{ path: string, name: string } | null>}
  */
 export async function findSticker(name, roots) {
-  const key = String(name ?? '').trim();
+  const key = safeStickerName(name);
   if (!key || !Array.isArray(roots)) return null;
 
   for (const root of roots) {
@@ -53,8 +80,8 @@ export async function findSticker(name, roots) {
       if (map && typeof map === 'object') {
         const file = map[key] ?? map[key.toLowerCase()];
         if (typeof file === 'string' && file.trim()) {
-          const path = join(root, file.trim());
-          if (await isFile(path)) return { path, name: key };
+          const path = insideRoot(root, file.trim());
+          if (path && await isFile(path)) return { path, name: key };
         }
       }
     } catch {
@@ -63,8 +90,8 @@ export async function findSticker(name, roots) {
 
     // 2) 同名文件
     for (const ext of STICKER_EXTS) {
-      const path = join(root, `${key}.${ext}`);
-      if (await isFile(path)) return { path, name: key };
+      const path = insideRoot(root, `${key}.${ext}`);
+      if (path && await isFile(path)) return { path, name: key };
     }
   }
   return null;
