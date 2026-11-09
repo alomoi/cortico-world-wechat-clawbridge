@@ -50,7 +50,7 @@ file_item = {
 
 | 文件 | 改什么 |
 |---|---|
-| `plugin/src/config.js` | `DEFAULTS` 加 `fileTransfer:false` / `maxFiles:2` / `maxFileBytes:32MiB`；ZH/EN 文案；schema 三个字段 |
+| `plugin/src/config.js` | `DEFAULTS` 加 `fileTransfer:false` / `maxFiles:2` / `maxFileBytes:100MiB`；ZH/EN 文案；schema 三个字段 |
 | `plugin/src/api.js` | 新增 `sendFile()`（照官方 `sendFileMessageWeixin`） |
 | `plugin/src/driver.js` | 新增 `sendFile()`：复用上传管道，只换 `media_type: 3` + `no_need_thumb: true` |
 | `plugin/src/files.js`（新） | 纯函数：`sanitizeFileName` / `namedBlobName` / `formatBytes` |

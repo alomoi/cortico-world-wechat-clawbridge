@@ -67,8 +67,8 @@ function fileErrorText(err) {
 
 /** `clawbridge_events` 的默认返回条数；调用方可用 limit 覆盖（上限 100）。 */
 const DEFAULT_EVENT_LIMIT = 10;
-/** 单个文件的默认上限（字节），与配置默认一致。 */
-const DEFAULT_MAX_FILE_BYTES = 32 * 1024 * 1024;
+/** 单个文件/视频的默认上限（字节），与配置默认一致。 */
+const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
 const nowIso = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

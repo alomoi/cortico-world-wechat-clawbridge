@@ -28,7 +28,7 @@ export const DEFAULTS = Object.freeze({
   mediaAttach: true,
   /** 是否下载入站图片；关掉只保留凭证与正文路径。 */
   mediaDownload: true,
-  /** 单件媒体上限，默认 32 MiB（对齐 DeepSeek inline 限制）。 */
+  /** 单件媒体上限，默认 32 MiB（对齐 DeepSeek inline 限制）。 **只管图片**。 */
   maxMediaBytes: 32 * 1024 * 1024,
   /** 单次回复最多拆成几条微信消息。 */
   maxSegments: 4,
@@ -62,8 +62,15 @@ export const DEFAULTS = Object.freeze({
   fileTransfer: false,
   /** 单次最多发几个文件。 */
   maxFiles: 2,
-  /** 单个文件上限（字节），收发都按它卡。 */
-  maxFileBytes: 32 * 1024 * 1024,
+  /**
+   * 单个文件/视频上限（字节），收发都按它卡。
+   *
+   * **和图片的 `maxMediaBytes` 是两个独立口径**：图片要进模型，受 inline 附件上限约束（32 MiB）；
+   * 文件与视频只落盘给路径、**不进模型**，所以没有模型侧理由卡在 32 MiB。
+   * 这里取 100 MiB 纯粹是「磁盘占用 + 内存里整块读一遍」的务实上限，
+   * **不是微信的限制**——服务端真实上限未实测，需要时自行调整。
+   */
+  maxFileBytes: 100 * 1024 * 1024,
 });
 
 const ZH = {
@@ -121,8 +128,10 @@ const ZH = {
     fileTransferDesc: '打开后才能收发文件。收到的文件落在 <数据目录>/clawbot/blobs，按上面的图片保留天数清理；她只能发自己 workspace 里的文件。默认关闭。修改后需重启。',
     maxFiles: '单次最多几个文件',
     maxFilesDesc: '一次回复里最多附带几个文件，默认 2，上限 4。文件在文字与图片之后按顺序发出。修改后需重启。',
-    maxFileBytes: '单件文件上限（字节）',
-    maxFileBytesDesc: '超过该大小的文件既不收也不发，默认 33554432（32 MiB）。修改后需重启。',
+    maxFileBytes: '单件文件/视频上限（字节）',
+    maxFileBytesDesc: '超过该大小的文件与视频既不收也不发，默认 104857600（100 MiB）。'
+      + '与图片上限是两个口径：图片要进模型所以卡 32 MiB，文件/视频只落盘、不进模型。'
+      + '**这不是微信的限制**（服务端真实上限未实测），只是磁盘与内存的务实上限。修改后需重启。',
   },
 };
 
@@ -181,8 +190,11 @@ const EN = {
     fileTransferDesc: 'Turn on to send and receive files. Received files land in <dataDir>/clawbot/blobs and are cleaned up with the image retention setting above; she may only send files from her own workspace. Off by default. Restart after changing.',
     maxFiles: 'Max files per reply',
     maxFilesDesc: 'How many files one reply may attach, default 2, max 4. Files go out after the text and images, in order. Restart after changing.',
-    maxFileBytes: 'Max bytes per file',
-    maxFileBytesDesc: 'Files larger than this are neither received nor sent. Default 33554432 (32 MiB). Restart after changing.',
+    maxFileBytes: 'Max bytes per file/video',
+    maxFileBytesDesc: 'Files and videos larger than this are neither received nor sent. Default 104857600 (100 MiB). '
+      + 'This is a separate limit from images: images go into the model and are capped at 32 MiB, while files/videos '
+      + 'are only stored and never sent to the model. It is not a WeChat limit (the real server limit is untested), '
+      + 'just a practical disk/memory ceiling. Restart after changing.',
   },
 };
 
