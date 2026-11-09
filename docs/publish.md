@@ -19,7 +19,7 @@
 
 主人把 token 给本鱼 → 本鱼写进 `~/.npmrc` → `pnpm publish` → **发布后立刻删掉 token**。
 
-> 更安全的做法：把 token 存成 `D:\文档\deepseek-harness\default-workspace\.npm-token` 文件，
+> 更安全的做法：把 token 存成工作区外的一个文件（例如 `~/.npm-token`），
 > 本鱼读文件、不打印，就不必经过聊天记录。
 
 ## 这次踩的坑（重要，下次别再踩）
