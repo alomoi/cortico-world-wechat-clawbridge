@@ -83,6 +83,24 @@ export function sniffMedia(bytes) {
 }
 
 /**
+ * 视频容器的扩展名。
+ *
+ * 只用来给落盘文件起个能认出来的名字，不解析内容、不验证能否播放。
+ * MP4 与 MOV 都以 `ftyp` 开头，统一按 `.mp4`；识别不出返回 null（调用方退化成 `.bin`）。
+ */
+export function sniffVideoExt(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  const head = bytes.subarray(0, 12);
+  if (head.subarray(4, 8).toString('latin1') === 'ftyp') return 'mp4';
+  if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return 'webm';
+  if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'AVI ') {
+    return 'avi';
+  }
+  if (head.subarray(0, 3).toString('latin1') === 'FLV') return 'flv';
+  return null;
+}
+
+/**
  * 下载并按需解密一件媒体。
  *
  * @returns {{ bytes: Buffer, mime: string|null, ext: string|null,

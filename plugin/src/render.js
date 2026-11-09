@@ -45,8 +45,20 @@ export function itemText(item, attachment = null) {
       const size = attachment.size ? ` ${formatBytes(attachment.size)}` : '';
       return `[文件 ${shown}${size} ${attachment.path}]`;
     }
-    case VIDEO:
-      return '[视频]';
+    case VIDEO: {
+      const seconds = Number(item?.video_item?.play_length ?? 0) / 1000;
+      const secText = seconds > 0 ? ` ${seconds.toFixed(1)} 秒` : '';
+      const skipped = attachment?.skipped;
+      if (skipped === 'disabled') return `[视频${secText} 未下载(收发文件未开启)]`;
+      if (skipped === 'too-large') {
+        const limit = attachment.limit ? formatBytes(attachment.limit) : '';
+        return `[视频${secText} 超过上限(${limit || '?'}) 未下载]`;
+      }
+      if (skipped === 'failed') return `[视频${secText} 下载失败]`;
+      if (!attachment?.path) return `[视频${secText}]`;
+      const size = attachment.size ? ` ${formatBytes(attachment.size)}` : '';
+      return `[视频${secText}${size} ${attachment.path}]`;
+    }
     default:
       return type ? `[消息类型 ${type}]` : '';
   }
@@ -122,7 +134,11 @@ function slimItem(item) {
         size: Number(item?.file_item?.len) || 0,
       };
     case VIDEO:
-      return { type, size: Number(item?.video_item?.video_size) || 0 };
+      return {
+        type,
+        size: Number(item?.video_item?.video_size) || 0,
+        playtime: Number(item?.video_item?.play_length) || 0,
+      };
     default:
       return { type };
   }

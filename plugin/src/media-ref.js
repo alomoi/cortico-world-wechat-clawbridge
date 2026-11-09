@@ -14,7 +14,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 
-import { downloadMedia, saveBlob } from './media.js';
+import { downloadMedia, saveBlob, sniffVideoExt } from './media.js';
 import { saveNamedFile, sanitizeFileName } from './files.js';
 
 const MEDIA_KIND = { 2: 'image', 3: 'voice', 4: 'file', 5: 'video' };
@@ -62,7 +62,13 @@ export function mediaRefOf(item, msgId, index) {
     ...(aesKey ? { aesKey } : {}),
     ...(aesKeyHex ? { aesKeyHex } : {}),
     ...(kind === 'image' ? { size: Number(node?.mid_size) || 0 } : {}),
-    ...(kind === 'video' ? { size: Number(node?.video_size) || 0 } : {}),
+    ...(kind === 'video'
+      ? {
+        // `video_size` 的语义没实测过，只作参考；下载上限由实际字节兜底。
+        size: Number(node?.video_size) || 0,
+        playtime: Number(node?.play_length) || 0,
+      }
+      : {}),
     ...(kind === 'voice' ? { playtime: Number(node?.playtime) || 0 } : {}),
     ...(kind === 'file' ? { name: String(node?.file_name ?? ''), size: Number(node?.len) || 0 } : {}),
   };
@@ -171,8 +177,10 @@ export class MediaRefStore {
  * 下载规则：
  *   - 图片：按 `download` 开关，下载后按文件头识别扩展名落 `blobs/`；
  *   - 文件：**还要总开关 `fileTransfer`**，落 `blobs/` 且保留（消毒后的）原文件名；
- *     不给 `bytes` 字段，所以不会被当成图片附件送进模型。
- *   - 语音/视频：不下载（语音已有微信转写文本；模型不看视频），凭证照存。
+ *   - 视频：与文件同一条路（同一开关、同一上限），落 `blobs/` 并按容器头命名
+ *     `wx-video.<mp4|webm|avi|flv|bin>`；**不抽帧、不解析**，只给路径；
+ *   - 以上三者都不带 `bytes` 字段（除图片有意附带），所以不会被动送进模型。
+ *   - 语音：不下载（已有微信转写文本），凭证照存。
  *
  * 任何失败都只记日志并继续下一条——消息本身不能被媒体拖死。
  *
@@ -234,20 +242,25 @@ export async function captureMediaItems({
       continue;
     }
 
-    // 文件：只有总开关打开才下载，否则正文留占位、凭证照存
-    if (ref.kind !== 'file') continue;
+    // 文件与视频：都按「临时文件」处理，只有总开关打开才下载
+    if (ref.kind !== 'file' && ref.kind !== 'video') continue;
 
-    const declared = Number(ref.size) || 0;
-    const shownName = sanitizeFileName(ref.name || 'file');
+    const isVideo = ref.kind === 'video';
+    const playtime = Number(ref.playtime) || 0;
+    const rawName = isVideo ? 'wx-video' : sanitizeFileName(ref.name || 'file');
+    const skipBase = isVideo ? { skipped: 'disabled', video: true, playtime } : { skipped: 'disabled', name: rawName };
 
-    // 没下载时把原因一起带进事件正文：模型才知道该提醒用户开开关，还是文件太大
     if (!fileTransfer) {
-      attachments.set(index, { skipped: 'disabled', name: shownName });
+      attachments.set(index, skipBase);
       continue;
     }
-    if (declared > maxFileBytes) {
+
+    // 文件能用事件里的 `len` 先挡一次；视频的 `video_size` 语义没实测过，
+    // 不拿它当判据，统一交给下载时的字节上限兜底。
+    const declared = Number(ref.size) || 0;
+    if (!isVideo && declared > maxFileBytes) {
       log?.info?.('clawbot: 文件超过上限，未下载', { key: ref.key, size: declared, max: maxFileBytes });
-      attachments.set(index, { skipped: 'too-large', name: shownName, size: declared, limit: maxFileBytes });
+      attachments.set(index, { skipped: 'too-large', name: rawName, size: declared, limit: maxFileBytes });
       try {
         await store.save(ref.key, { ...record, skipped: 'too-large', size: declared });
       } catch {
@@ -258,13 +271,14 @@ export async function captureMediaItems({
 
     try {
       const result = await downloadMedia(record, { fetchImpl, maxBytes: maxFileBytes });
-      const saved = await saveNamedFile(blobsDir, result.bytes, shownName);
-      // 不给 bytes：文件不进模型附件（她要不要读由宿主决定）
+      // 视频用容器头起名（`.bin` 连人都不认识）；文件保留消毒后的原名
+      const name = isVideo ? `${rawName}.${sniffVideoExt(result.bytes) ?? 'bin'}` : rawName;
+      const saved = await saveNamedFile(blobsDir, result.bytes, name);
+      // 不给 bytes：文件/视频都不进模型附件（要不要读由宿主决定）
       attachments.set(index, {
         path: saved.path,
-        name: shownName,
         size: result.bytes.length,
-        mime: result.mime ?? null,
+        ...(isVideo ? { video: true, playtime } : { name: rawName }),
       });
       await store.save(ref.key, {
         ...record,
@@ -275,8 +289,11 @@ export async function captureMediaItems({
         downloadedAt: new Date().toISOString(),
       });
     } catch (err) {
-      attachments.set(index, { skipped: 'failed', name: shownName });
-      log?.warn?.('clawbot: 文件下载失败', {
+      const fallback = isVideo
+        ? { skipped: err?.code === 'too-large' ? 'too-large' : 'failed', video: true, playtime, limit: maxFileBytes }
+        : { skipped: err?.code === 'too-large' ? 'too-large' : 'failed', name: rawName, limit: maxFileBytes };
+      attachments.set(index, fallback);
+      log?.warn?.(isVideo ? 'clawbot: 视频下载失败' : 'clawbot: 文件下载失败', {
         key: ref.key,
         code: err?.code ?? '',
         error: String(err?.message ?? err),
