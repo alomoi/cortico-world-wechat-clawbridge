@@ -26,7 +26,7 @@ import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js'
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
-import { limitSegments, splitLongText, splitScript } from './segments.js';
+import { limitSegments, splitLongText, splitScript, stripLeakedTags } from './segments.js';
 import { isInsideAnyResolved } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
@@ -231,7 +231,15 @@ export class ClawbotWorld {
   }
 
   async #toolSend(args) {
-    const script = String(args?.text ?? '').trim();
+    // 先剥掉模型偶尔漏出的包装标签（实测 `</text>`），再 trim——否则尾巴会跟着发出去
+    const rawScript = String(args?.text ?? '');
+    const cleaned = stripLeakedTags(rawScript);
+    if (cleaned !== rawScript) {
+      this.#host?.log?.info?.(
+        `clawbridge: 剥掉模型漏出的标签 ${rawScript.length - cleaned.length} 个字符（正文实际 ${cleaned.trim().length} 字）`,
+      );
+    }
+    const script = cleaned.trim();
     const imageRefs = (Array.isArray(args?.images) ? args.images : [])
       .map((ref) => String(ref ?? '').trim())
       .filter(Boolean)
@@ -1184,8 +1192,9 @@ export class ClawbotWorld {
           removed += result.removed;
           bytes += result.bytes;
           const dirName = dir.split(/[\\/]/).pop();
+          const skipped = result.foreign ? `，跳过非本插件文件 ${result.foreign}` : '';
           this.#host?.log?.info?.(
-            `clawbridge: 清理 ${dirName} 删除 ${result.removed} 个（保留 ${result.kept}，${Math.round(result.bytes / 1024)} KB）`,
+            `clawbridge: 清理 ${dirName} 删除 ${result.removed} 个（保留 ${result.kept}${skipped}，${Math.round(result.bytes / 1024)} KB）`,
             { dir: dirName, ...result },
           );
         }

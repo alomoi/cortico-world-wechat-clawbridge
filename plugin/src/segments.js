@@ -21,6 +21,21 @@ const INLINE_RE = /<([^<>\n]{0,24})>/g;
 const countChars = (s) => [...s].length;
 
 /**
+ * 模型偶尔会把半截 XML 标签写进正文（实测 `deepseek-flash` 会在 1.7.0 后的单条消息尾部
+ * 漏出 `</text>`）。这种标签不是表情、也不是内容，发到微信里只会变成可笑的尾巴。
+ *
+ * 只剥**已知的包装标签**（text/response/answer/reply/message/output/content），
+ * 并且成对或单独都处理；`<div>`、`a<b`、`3 < 5` 这类正常文本不受影响。
+ */
+const LEAKED_TAG_RE = /<\/?\s*(?:text|response|answer|reply|message|output|content)\s*>/gi;
+
+export function stripLeakedTags(text) {
+  const value = String(text ?? '');
+  if (!value.includes('<')) return value;
+  return value.replace(LEAKED_TAG_RE, '');
+}
+
+/**
  * 展开行内标记 `<…>`：就地替换成表情，不产生分段。
  *
  * 只处理**已知词**（由 `isKnownMarker` 判定），其余原样保留——

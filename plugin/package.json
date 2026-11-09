@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-wechat-clawbridge",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "type": "module",
   "description": "把微信 ClawBot 接到 Coopanion 桌宠：收发消息、收图片、发表情包、显示正在输入。",
   "license": "MIT",
