@@ -148,6 +148,7 @@ pnpm add cortico-world-wechat-clawbridge
 | [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
 | [docs/voice-send-probe.md](docs/voice-send-probe.md) | 发语音为何不可行（实测记录） |
 | [docs/file-transfer-plan.md](docs/file-transfer-plan.md) | 收发文件的定案与实现（1.7.0） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本历史（与 `plugin/CHANGELOG.md` 同步） |
 | [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
 
 > 安装者只需要看上面的「安装 / 使用说明」；`plugin/README.md` 是 npm 页面用的精简版。
