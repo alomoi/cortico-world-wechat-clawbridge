@@ -130,8 +130,10 @@ const ZH = {
     maxFilesDesc: '一次回复里最多附带几个文件，默认 2，上限 4。文件在文字与图片之后按顺序发出。修改后需重启。',
     maxFileBytes: '单件文件/视频上限（字节）',
     maxFileBytesDesc: '超过该大小的文件与视频既不收也不发，默认 104857600（100 MiB）。'
+      + '可直接改：1 MiB = 1048576 字节，例如 52428800 = 50 MiB、209715200 = 200 MiB。'
       + '与图片上限是两个口径：图片要进模型所以卡 32 MiB，文件/视频只落盘、不进模型。'
-      + '**这不是微信的限制**（服务端真实上限未实测），只是磁盘与内存的务实上限。修改后需重启。',
+      + '**这不是微信的限制**（服务端真实上限未实测），只是磁盘与内存的务实上限——'
+      + '想探真实边界就改大后逐档试。修改后需重启。',
   },
 };
 
@@ -192,9 +194,10 @@ const EN = {
     maxFilesDesc: 'How many files one reply may attach, default 2, max 4. Files go out after the text and images, in order. Restart after changing.',
     maxFileBytes: 'Max bytes per file/video',
     maxFileBytesDesc: 'Files and videos larger than this are neither received nor sent. Default 104857600 (100 MiB). '
+      + 'Editable directly: 1 MiB = 1048576 bytes, e.g. 52428800 = 50 MiB, 209715200 = 200 MiB. '
       + 'This is a separate limit from images: images go into the model and are capped at 32 MiB, while files/videos '
       + 'are only stored and never sent to the model. It is not a WeChat limit (the real server limit is untested), '
-      + 'just a practical disk/memory ceiling. Restart after changing.',
+      + 'just a practical disk/memory ceiling — raise it and test if you want the true boundary. Restart after changing.',
   },
 };
 
