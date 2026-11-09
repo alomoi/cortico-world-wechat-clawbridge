@@ -506,3 +506,70 @@ export async function sendImage({
   }
   return data;
 }
+
+/**
+ * 发送一条文件消息。
+ *
+ * 形状照官方 2.4.10 的 `sendFileMessageWeixin`：`type: 4` 的 `file_item`，
+ * `media` 与图片同构，`file_name` 是对方看到的文件名，
+ * **`len` 是明文字节数**——别抄成图片那个密文 `mid_size`。
+ */
+export async function sendFile({
+  baseUrl,
+  token,
+  to,
+  encryptQueryParam,
+  aesKeyHex,
+  fileName,
+  plainSize,
+  contextToken,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = API_TIMEOUT_MS,
+  dispatcher,
+} = {}) {
+  const keyHex = String(aesKeyHex ?? '');
+  const body = {
+    msg: {
+      from_user_id: '',
+      to_user_id: String(to ?? ''),
+      client_id: `cortico-ilink-${randomUUID()}`,
+      message_type: 2,
+      message_state: 2,
+      item_list: [{
+        type: 4,
+        file_item: {
+          media: {
+            encrypt_query_param: String(encryptQueryParam ?? ''),
+            aes_key: Buffer.from(keyHex, 'utf8').toString('base64'),
+            encrypt_type: 1,
+          },
+          file_name: String(fileName ?? ''),
+          len: String(Number(plainSize) || 0),
+        },
+      }],
+      ...(contextToken ? { context_token: String(contextToken) } : {}),
+    },
+    base_info: baseInfo(),
+  };
+  const data = await request({
+    baseUrl,
+    endpoint: 'ilink/bot/sendmessage',
+    body,
+    token,
+    timeoutMs,
+    dispatcher,
+    fetchImpl,
+  });
+  if (data?.ret !== undefined && data.ret !== 0) {
+    throw new ILinkError(
+      `sendmessage ret=${data.ret}${data.errmsg ? ` ${String(data.errmsg)}` : ''}`,
+      {
+        ret: data.ret,
+        stage: 'sendmessage',
+        detail: data.errmsg ? String(data.errmsg) : '',
+        response: data,
+      },
+    );
+  }
+  return data;
+}

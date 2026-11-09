@@ -52,6 +52,18 @@ export const DEFAULTS = Object.freeze({
   mediaQuality: 82,
   /** 图片与媒体凭证保留天数；0 表示不清理。 */
   mediaRetentionDays: 7,
+  /**
+   * 收发文件总开关，默认关闭。
+   *
+   * 关着时：入站文件只给 `[文件 名字]` 占位（不下载、不给路径），
+   * `clawbridge_send` 的 `files` 参数一律拒绝。
+   * 收下的文件落 `blobs`，按 `mediaRetentionDays` 一起清理。
+   */
+  fileTransfer: false,
+  /** 单次最多发几个文件。 */
+  maxFiles: 2,
+  /** 单个文件上限（字节），收发都按它卡。 */
+  maxFileBytes: 32 * 1024 * 1024,
 });
 
 const ZH = {
@@ -105,6 +117,12 @@ const ZH = {
     mediaQualityDesc: '缩放后 JPEG 的质量，默认 82。数值越大越清晰也越大。修改后需重启。',
     mediaRetentionDays: '图片保留天数',
     mediaRetentionDaysDesc: '启动时删除超过这个天数的图片与媒体凭证（blobs 和 media 目录），默认 7；填 0 不清理。修改后需重启。',
+    fileTransfer: '收发文件',
+    fileTransferDesc: '打开后才能收发文件。收到的文件落在 <数据目录>/clawbot/blobs，按上面的图片保留天数清理；她只能发自己 workspace 里的文件。默认关闭。修改后需重启。',
+    maxFiles: '单次最多几个文件',
+    maxFilesDesc: '一次回复里最多附带几个文件，默认 2，上限 4。文件在文字与图片之后按顺序发出。修改后需重启。',
+    maxFileBytes: '单件文件上限（字节）',
+    maxFileBytesDesc: '超过该大小的文件既不收也不发，默认 33554432（32 MiB）。修改后需重启。',
   },
 };
 
@@ -159,6 +177,12 @@ const EN = {
     mediaQualityDesc: 'JPEG quality after downscaling, default 82. Higher is sharper and larger. Restart after changing.',
     mediaRetentionDays: 'Keep images for (days)',
     mediaRetentionDaysDesc: 'On startup, delete images and media credentials older than this (blobs and media folders). Default 7; 0 disables. Restart after changing.',
+    fileTransfer: 'File transfer',
+    fileTransferDesc: 'Turn on to send and receive files. Received files land in <dataDir>/clawbot/blobs and are cleaned up with the image retention setting above; she may only send files from her own workspace. Off by default. Restart after changing.',
+    maxFiles: 'Max files per reply',
+    maxFilesDesc: 'How many files one reply may attach, default 2, max 4. Files go out after the text and images, in order. Restart after changing.',
+    maxFileBytes: 'Max bytes per file',
+    maxFileBytesDesc: 'Files larger than this are neither received nor sent. Default 33554432 (32 MiB). Restart after changing.',
   },
 };
 
@@ -266,6 +290,24 @@ export function configGroup(language = 'zh') {
           type: 'integer',
           title: t.mediaRetentionDays,
           description: t.mediaRetentionDaysDesc,
+          'x-hot': false,
+        },
+        [`${K}.fileTransfer`]: {
+          type: 'boolean',
+          title: t.fileTransfer,
+          description: t.fileTransferDesc,
+          'x-hot': false,
+        },
+        [`${K}.maxFiles`]: {
+          type: 'integer',
+          title: t.maxFiles,
+          description: t.maxFilesDesc,
+          'x-hot': false,
+        },
+        [`${K}.maxFileBytes`]: {
+          type: 'integer',
+          title: t.maxFileBytes,
+          description: t.maxFileBytesDesc,
           'x-hot': false,
         },
       },

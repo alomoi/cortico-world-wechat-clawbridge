@@ -82,6 +82,18 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 把图片放进 `workspace\` 里，然后跟她说"把 workspace 里那张图发给我"即可。
 她自己收到的图，可以直接让她"把刚才那张发回来"。
 
+### 4. 让她收发文件（默认关闭）
+
+先到控制台把 **「收发文件」**（`fileTransfer`）打开，否则收发两边都会被拒绝。
+
+- **她发给你**：文件必须在她自己的工作区 `<Coopanion>\data\home\companion\workspace\` 里。
+  收来时落在 `data\clawbot\blobs\` 的文件**不能原路发回**，要发就先复制进工作区。
+- **你发给她**：正文会带文件名、大小和本地路径（如 `[文件 报告.pdf 2.3 MB …/blobs/…]`），
+  文件存在 `data\clawbot\blobs\`，按 `mediaRetentionDays`（默认 7 天）清理；
+  想长期留就复制进 `workspace\`。
+- 文件名会被消毒后落盘（保留原名，去掉路径与非法字符），单件上限 `maxFileBytes`（默认 32 MiB）。
+- 插件**不解析文件内容**：能不能读、怎么读，看她手上的工具。
+
 ## 其它人工操作
 
 ### 改配置
@@ -94,7 +106,9 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 | `maxSegments` / `segmentDelayMs` | 4 / 600 | 分条上限与间隔 |
 | `maxImages` | 2 | 单次最多几张图 |
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（`0` 关闭） |
-| `mediaRetentionDays` | 7 | 图片与凭证保留天数（`0` 不清理） |
+| `mediaRetentionDays` | 7 | 图片与凭证保留天数（`0` 不清理）；收下的文件同此 |
+| `fileTransfer` | false | 收发文件总开关 |
+| `maxFiles` / `maxFileBytes` | 2 / 32 MiB | 单次文件数、单件大小上限 |
 | `networkMode` / `proxyUrl` | inherit / — | 走系统代理或手动指定 |
 
 ### 看收到过的图
@@ -125,7 +139,8 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 - 只读取**一对一私聊**；接口不支持群聊、主动推送、加好友
 - 数据都在本机 `<Coopanion>\data\home\companion\data\clawbot\`
 - 发图有路径白名单，只允许 `data/clawbot` 与 `workspace` 两棵子树
-- 明确不做：发语音（实测服务端不投递）、引用回复、收发文件、视频、缩略图
+- 收发文件**默认关闭**；打开后她只能发 `workspace` 里的文件，收来的不能原路发回
+- 明确不做：发语音（实测服务端不投递）、引用回复、视频、缩略图
 
 ## 许可
 

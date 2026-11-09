@@ -9,6 +9,7 @@ import {
   getUpdates,
   getUploadUrl,
   randomAesKeyHex,
+  sendFile,
   sendImage,
   sendText,
   sendTyping,
@@ -134,12 +135,13 @@ export class ILinkDriver {
   }
 
   /**
-   * 发一张图：加密 → 取上传地址 → 上传密文 → 发图片消息。
+   * 媒体上传管道：加密 → 取上传地址 → 上传密文。
    *
-   * `midSize` 先按密文长度传（官方注释口径）；若真机显示坏图，
-   * 改用明文字节数，`midSizeMode: 'plain'`。
+   * 图片与文件只差 `mediaType`（1 / 3）和最后那条 item 的字段，所以抽在这里。
+   * 失败时把上传现场的要素挂到错误上（`uploadUrl` / `usedFallbackUrl` / `filekey`），
+   * 回执与诊断日志都靠它们。
    */
-  async sendImage({ to, bytes, contextToken, midSizeMode = 'cipher' }) {
+  async #uploadMedia({ to, bytes, mediaType }) {
     const prepared = prepareMediaUpload(bytes, { keyHex: randomAesKeyHex() });
     const filekey = randomAesKeyHex();
 
@@ -147,7 +149,7 @@ export class ILinkDriver {
       baseUrl: this.#auth.baseUrl,
       token: this.#auth.token,
       filekey,
-      mediaType: 1,
+      mediaType,
       toUserId: to,
       rawSize: prepared.rawSize,
       rawMd5: prepared.rawMd5,
@@ -178,6 +180,18 @@ export class ILinkDriver {
       throw err;
     }
 
+    return { prepared, encryptQueryParam };
+  }
+
+  /**
+   * 发一张图：加密 → 取上传地址 → 上传密文 → 发图片消息。
+   *
+   * `midSize` 先按密文长度传（官方注释口径）；若真机显示坏图，
+   * 改用明文字节数，`midSizeMode: 'plain'`。
+   */
+  async sendImage({ to, bytes, contextToken, midSizeMode = 'cipher' }) {
+    const { prepared, encryptQueryParam } = await this.#uploadMedia({ to, bytes, mediaType: 1 });
+
     const midSize = midSizeMode === 'plain' ? prepared.rawSize : prepared.cipherSize;
     return sendImage({
       baseUrl: this.#auth.baseUrl,
@@ -186,6 +200,27 @@ export class ILinkDriver {
       encryptQueryParam,
       aesKeyHex: prepared.keyHex,
       midSize,
+      contextToken,
+      fetchImpl: this.#fetchImpl,
+      dispatcher: this.#dispatcher,
+    });
+  }
+
+  /**
+   * 发一个文件：与发图同一条上传管道，只换 `media_type: 3`。
+   *
+   * `len` 必须传**明文字节数**（官方源码口径），这里由 `prepared.rawSize` 保证。
+   */
+  async sendFile({ to, bytes, fileName, contextToken }) {
+    const { prepared, encryptQueryParam } = await this.#uploadMedia({ to, bytes, mediaType: 3 });
+    return sendFile({
+      baseUrl: this.#auth.baseUrl,
+      token: this.#auth.token,
+      to,
+      encryptQueryParam,
+      aesKeyHex: prepared.keyHex,
+      fileName,
+      plainSize: prepared.rawSize,
       contextToken,
       fetchImpl: this.#fetchImpl,
       dispatcher: this.#dispatcher,

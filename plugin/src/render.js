@@ -3,6 +3,7 @@
  *
  * context_token 是发消息的凭据，不能进事件 meta、日志或模型上下文。
  */
+import { formatBytes, sanitizeFileName } from './files.js';
 
 const TEXT = 1;
 const IMAGE = 2;
@@ -25,8 +26,17 @@ export function itemText(item, attachment = null) {
       return String(item?.voice_item?.text ?? '[语音]');
     case IMAGE:
       return attachment?.path ? `[图片 ${attachment.path}]` : '[图片]';
-    case FILE:
-      return item?.file_item?.file_name ? `[文件 ${item.file_item.file_name}]` : '[文件]';
+    case FILE: {
+      const raw = String(item?.file_item?.file_name ?? '');
+      if (!raw) return '[文件]';
+      // 对方给的文件名是外部输入：展示与落盘都只用消毒后的版本
+      const name = sanitizeFileName(raw);
+      // 没开「收发文件」时只有占位；开了并下载成功才给大小与本地路径
+      if (!attachment?.path) return `[文件 ${name}]`;
+      const shown = attachment.name || name;
+      const size = attachment.size ? ` ${formatBytes(attachment.size)}` : '';
+      return `[文件 ${shown}${size} ${attachment.path}]`;
+    }
     case VIDEO:
       return '[视频]';
     default:

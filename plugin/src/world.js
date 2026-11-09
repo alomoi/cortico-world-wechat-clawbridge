@@ -6,8 +6,8 @@
  * 语音用微信的转写文本；图片会下载解密后落盘，正文带本地路径。
  * 事件 meta 只保留精简信封，媒体凭证存在 `<dataDir>/clawbot/media/`。
  */
-import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname, resolve } from 'node:path';
+import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
+import { basename, join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import QRCode from 'qrcode';
@@ -28,7 +28,7 @@ import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
 import { limitSegments, splitLongText, splitScript } from './segments.js';
-import { isInsideAny } from './paths.js';
+import { isInsideAny, isInside } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
 import { DEFAULT_MAX_EDGE, DEFAULT_QUALITY, downscaleForModel } from './resize.js';
@@ -52,8 +52,23 @@ function imageErrorText(err) {
   }
 }
 
+/** 文件引用失败的短原因（进回执）。 */
+function fileErrorText(err) {
+  switch (err?.code) {
+    case 'denied': return '路径不允许(仅工作区)';
+    case 'too-large': return '文件过大';
+    case 'not-file': return '不是文件';
+    case 'empty':
+    case 'empty-file': return '空文件';
+    case 'ENOENT': return '文件不存在';
+    default: return '文件读取失败';
+  }
+}
+
 /** `clawbridge_events` 的默认返回条数；调用方可用 limit 覆盖（上限 100）。 */
 const DEFAULT_EVENT_LIMIT = 10;
+/** 单个文件的默认上限（字节），与配置默认一致。 */
+const DEFAULT_MAX_FILE_BYTES = 32 * 1024 * 1024;
 const nowIso = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -100,6 +115,14 @@ export const CLAWBOT_TOOL_DECLS = [
             + 'to send back a picture you received or remember; "sticker:<name>" for a picture sticker from the '
             + 'sticker library; or an absolute path inside the bridge blob folder (…/clawbot/blobs) or your own '
             + 'workspace (…/workspace). Anything else is refused.',
+        },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Files to send after the text and images. Only available when file transfer is enabled in the plugin '
+            + 'settings. Each one must be an absolute path inside your own workspace (…/workspace); files you '
+            + 'received cannot be sent back, copy them into your workspace first. Anything else is refused.',
         },
       },
       additionalProperties: false,
@@ -212,14 +235,24 @@ export class ClawbotWorld {
       .map((ref) => String(ref ?? '').trim())
       .filter(Boolean)
       .slice(0, this.#maxImages());
-    if (!script && imageRefs.length === 0) return { text: failedReceipt('内容为空'), failed: true };
+    const fileRefs = (Array.isArray(args?.files) ? args.files : [])
+      .map((ref) => String(ref ?? '').trim())
+      .filter(Boolean)
+      .slice(0, this.#maxFiles());
+    if (!script && imageRefs.length === 0 && fileRefs.length === 0) {
+      return { text: failedReceipt('内容为空'), failed: true };
+    }
+    // 总开关关着时，files 参数直接拒（默认配置就是关）
+    if (fileRefs.length > 0 && !this.#fileTransferOn()) {
+      return { text: failedReceipt('文件收发未开启'), failed: true };
+    }
 
     const { segments, truncated } = splitScript(script, {
       maxSegments: this.#maxSegments(),
       resolveMarker: this.#markerResolver(),
       isKnownMarker: isKnownWord,
     });
-    if (segments.length === 0 && imageRefs.length === 0) {
+    if (segments.length === 0 && imageRefs.length === 0 && fileRefs.length === 0) {
       return { text: failedReceipt('内容为空'), failed: true };
     }
 
@@ -252,11 +285,12 @@ export class ClawbotWorld {
     // 真要发东西了，先撤掉「正在输入」
     try { await driver.stopTyping?.(to); } catch { /* 无所谓 */ }
 
-    const total = outSegments.length + imageRefs.length;
+    const total = outSegments.length + imageRefs.length + fileRefs.length;
     let chars = 0;
     let sent = 0;
     let textSent = 0;
     let imageSent = 0;
+    let fileSent = 0;
 
     for (const segment of outSegments) {
       try {
@@ -319,15 +353,48 @@ export class ClawbotWorld {
       if (sent < total) await sleep(this.#segmentDelayMs());
     }
 
-    const detail = [textSent ? `${textSent}文` : '', imageSent ? `${imageSent}图` : '']
-      .filter(Boolean)
-      .join('+');
+    for (const ref of fileRefs) {
+      let loaded;
+      try {
+        loaded = await this.#loadFileBytes(ref);
+      } catch (err) {
+        const where = total > 1 ? `第${sent + 1}条 ` : '';
+        return { text: failedReceipt(`${where}${fileErrorText(err)}`), failed: true };
+      }
+      try {
+        await driver.sendFile({ to, bytes: loaded.bytes, fileName: loaded.name, contextToken });
+      } catch (err) {
+        this.#host?.log?.warn?.('clawbridge: 发文件失败', {
+          to: shortId(to),
+          index: sent + 1,
+          total,
+          bytes: loaded.bytes.length,
+          name: loaded.name,
+          stage: err?.stage,
+          error: msgOf(err),
+          ret: err?.ret,
+          status: err?.status,
+        });
+        const where = total > 1 ? `第${sent + 1}条 ` : '';
+        return { text: failedReceipt(`${where}${describeSendError(err)}`), failed: true };
+      }
+      sent += 1;
+      fileSent += 1;
+      if (sent < total) await sleep(this.#segmentDelayMs());
+    }
+
+    const detail = [
+      textSent ? `${textSent}文` : '',
+      imageSent ? `${imageSent}图` : '',
+      fileSent ? `${fileSent}文件` : '',
+    ].filter(Boolean).join('+');
 
     this.#host?.log?.info?.('clawbridge: 已发送微信消息', {
       to: shortId(to),
       messages: sent,
       text: textSent,
       images: imageSent,
+      files: fileSent,
       chars,
     });
     const receipt = sentReceipt({ chars, messages: sent, detail, timezone: this.#timezone });
@@ -337,6 +404,18 @@ export class ClawbotWorld {
   /** 单次最多几张图（默认 2）。 */
   #maxImages() {
     const value = Number(this.#cfg?.maxImages);
+    if (!Number.isFinite(value) || value < 0) return 2;
+    return Math.min(Math.floor(value), 4);
+  }
+
+  /** 收发文件总开关（默认关闭）。 */
+  #fileTransferOn() {
+    return this.#cfg?.fileTransfer === true;
+  }
+
+  /** 单次最多几个文件（默认 2，上限 4）。 */
+  #maxFiles() {
+    const value = Number(this.#cfg?.maxFiles);
     if (!Number.isFinite(value) || value < 0) return 2;
     return Math.min(Math.floor(value), 4);
   }
@@ -362,6 +441,50 @@ export class ClawbotWorld {
       }
     }
     return roots.filter(Boolean).map((root) => resolve(String(root)));
+  }
+
+  /**
+   * 允许发文件的目录：**只有桌宠自己的工作区**。
+   *
+   * 比图片更严：图片还能发 `clawbot/blobs`（把收到的图转发回去），
+   * 文件不行——收来的是对方的东西，要再发就先自己复制进工作区。
+   * `imageRoots` 之类的追加目录对文件**不生效**。
+   */
+  #fileRoots() {
+    return [resolve(join(dirname(this.#dataDir), 'workspace'))];
+  }
+
+  /**
+   * 把文件引用变成字节。
+   *
+   * 只认工作区里的绝对路径；句柄（`log:` / `mem:` / `sticker:`）、数据目录、
+   * 机器上任意路径一律拒绝。
+   *
+   * 额外做一次 realpath 对照：工作区里放一个指向外面的软链，
+   * 也不能把外面的文件发出去。
+   */
+  async #loadFileBytes(ref) {
+    const value = String(ref ?? '').trim();
+    if (!value) throw Object.assign(new Error('空引用'), { code: 'empty' });
+    if (/^(?:log|mem|blob|sticker):/i.test(value)) {
+      throw Object.assign(new Error('文件不支持句柄'), { code: 'denied' });
+    }
+
+    const root = this.#fileRoots()[0];
+    const abs = resolve(value);
+    if (!isInside(abs, root)) throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+
+    let realRoot = root;
+    let realAbs = abs;
+    try { realRoot = resolve(await realpath(root)); } catch { /* 目录还不存在就算了 */ }
+    try { realAbs = resolve(await realpath(abs)); } catch { /* 交给下面的 stat 报错 */ }
+    if (!isInside(realAbs, realRoot)) throw Object.assign(new Error('路径不在允许范围'), { code: 'denied' });
+
+    const info = await stat(realAbs);
+    if (!info.isFile()) throw Object.assign(new Error('不是文件'), { code: 'not-file' });
+    if (info.size === 0) throw Object.assign(new Error('空文件'), { code: 'empty-file' });
+    if (info.size > this.#maxFileBytes()) throw Object.assign(new Error('过大'), { code: 'too-large' });
+    return { bytes: await readFile(realAbs), name: basename(abs) };
   }
 
   /**
@@ -1151,12 +1274,19 @@ export class ClawbotWorld {
       maxBytes: this.#maxMediaBytes(),
       log: this.#host?.log,
       download: this.#cfg?.mediaDownload !== false,
+      fileTransfer: this.#fileTransferOn(),
+      maxFileBytes: this.#maxFileBytes(),
     });
   }
 
   #maxMediaBytes() {
     const configured = Number(this.#cfg?.maxMediaBytes);
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_BYTES;
+  }
+
+  #maxFileBytes() {
+    const configured = Number(this.#cfg?.maxFileBytes);
+    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_FILE_BYTES;
   }
 
   async stop() {

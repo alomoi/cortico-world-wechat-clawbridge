@@ -46,6 +46,7 @@ pnpm add cortico-world-wechat-clawbridge
 | 表情替换 | `【害羞】` → 😳；`<wink>` 就地替换，不拆条 |
 | 发图 | 上下文句柄、本地路径、`sticker:名字` 三种来源 |
 | 图片表情包 | 素材目录里放图即用，参数不写扩展名也自动匹配 |
+| 收发文件 | **默认关闭**。打开后：你发的文件她会存下来（带原名、大小、路径）；她只能发自己 workspace 里的文件 |
 | 正在输入 | 微信侧显示“对方正在输入”，本轮结束自动撤销 |
 | 降采样 | 长边 768，原图不动，发图仍用原图 |
 | 图片面板 | 控制台里查看收到过的图片缩略图 |
@@ -102,7 +103,9 @@ pnpm add cortico-world-wechat-clawbridge
 | `emojiReplace` | true | `【害羞】` → 😳 |
 | `maxImages` | 2 | 单次最多几张图 |
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（0 关闭） |
-| `mediaRetentionDays` | 7 | 图片与凭证保留天数（0 不清理） |
+| `mediaRetentionDays` | 7 | 图片与凭证保留天数（0 不清理）；收下的文件同此 |
+| `fileTransfer` | false | 收发文件总开关（关着时两边都拒） |
+| `maxFiles` / `maxFileBytes` | 2 / 32 MiB | 单次文件数、单件大小上限 |
 | `networkMode` / `proxyUrl` / `forceIpv4` | inherit / — / false | 网络与代理 |
 
 ### 收到的图片在哪
@@ -116,7 +119,9 @@ pnpm add cortico-world-wechat-clawbridge
 - 只读取**一对一私聊**；不支持群聊、主动推送、加好友（接口本身不提供）
 - 数据都留在本机 `<Coopanion>/data/home/companion/data/clawbot/`
 - 发图有路径白名单，只允许 `data/clawbot` 与 `workspace` 两棵子树
-- 明确不做：发语音（实测服务端不投递）、引用回复、收发文件、视频、缩略图
+- 收发文件**默认关闭**；打开后她只能发 `workspace` 里的文件，收来的文件不能原路发回；
+  文件名会消毒后落盘（保留原名），单件超过上限既不收也不发
+- 明确不做：发语音（实测服务端不投递）、引用回复、视频、缩略图
 
 ## 与上游的区别
 
@@ -141,6 +146,7 @@ pnpm add cortico-world-wechat-clawbridge
 | [docs/release.md](docs/release.md) | 离线安装包的构建与踩坑 |
 | [docs/publish.md](docs/publish.md) | 发布到 GitHub / npm 的步骤 |
 | [docs/voice-send-probe.md](docs/voice-send-probe.md) | 发语音为何不可行（实测记录） |
+| [docs/file-transfer-plan.md](docs/file-transfer-plan.md) | 收发文件的定案与实现（1.7.0） |
 | [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
 
 > 安装者只需要看上面的「安装 / 使用说明」；`plugin/README.md` 是 npm 页面用的精简版。

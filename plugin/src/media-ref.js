@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 
 import { downloadMedia, saveBlob } from './media.js';
+import { saveNamedFile, sanitizeFileName } from './files.js';
 
 const MEDIA_KIND = { 2: 'image', 3: 'voice', 4: 'file', 5: 'video' };
 
@@ -63,7 +64,7 @@ export function mediaRefOf(item, msgId, index) {
     ...(kind === 'image' ? { size: Number(node?.mid_size) || 0 } : {}),
     ...(kind === 'video' ? { size: Number(node?.video_size) || 0 } : {}),
     ...(kind === 'voice' ? { playtime: Number(node?.playtime) || 0 } : {}),
-    ...(kind === 'file' ? { name: String(node?.file_name ?? '') } : {}),
+    ...(kind === 'file' ? { name: String(node?.file_name ?? ''), size: Number(node?.len) || 0 } : {}),
   };
 }
 
@@ -165,14 +166,17 @@ export class MediaRefStore {
 }
 
 /**
- * 处理一条入站消息里的媒体：先存凭证，再按需把图片下载解密落盘。
+ * 处理一条入站消息里的媒体：先存凭证，再按需下载解密落盘。
  *
- * 只下载图片。语音已有微信转写文本，下载音频没有收益；
- * 文件与视频留待后续版本，凭证照存不误。
+ * 下载规则：
+ *   - 图片：按 `download` 开关，下载后按文件头识别扩展名落 `blobs/`；
+ *   - 文件：**还要总开关 `fileTransfer`**，落 `blobs/` 且保留（消毒后的）原文件名；
+ *     不给 `bytes` 字段，所以不会被当成图片附件送进模型。
+ *   - 语音/视频：不下载（语音已有微信转写文本；模型不看视频），凭证照存。
  *
  * 任何失败都只记日志并继续下一条——消息本身不能被媒体拖死。
  *
- * @returns {Map<number, { path: string, mime: string }>} item 下标 → 已落盘的图片
+ * @returns {Promise<Map<number, { path: string, mime: string|null, bytes?: Buffer, name?: string, size?: number }>>}
  */
 export async function captureMediaItems({
   message,
@@ -181,6 +185,8 @@ export async function captureMediaItems({
   blobsDir,
   fetchImpl = globalThis.fetch,
   maxBytes,
+  maxFileBytes = maxBytes,
+  fileTransfer = false,
   log = null,
   download = true,
 }) {
@@ -200,25 +206,69 @@ export async function captureMediaItems({
       log?.warn?.('clawbot: 媒体引用没存下来', { key: ref.key, error: String(err?.message ?? err) });
     }
 
-    if (!download || ref.kind !== 'image') continue;
+    if (!download) continue;
+
+    if (ref.kind === 'image') {
+      try {
+        const result = await downloadMedia(record, { fetchImpl, maxBytes });
+        if (!result.mime || !result.ext) {
+          throw Object.assign(new Error('无法识别的图片格式'), { code: 'unsupported' });
+        }
+        const path = await saveBlob(blobsDir, result.bytes, result.ext);
+        attachments.set(index, { path, mime: result.mime, bytes: result.bytes });
+        await store.save(ref.key, {
+          ...record,
+          blobPath: path,
+          mime: result.mime,
+          bytes: result.bytes.length,
+          ...(result.sizeMatches === null ? {} : { sizeMatches: result.sizeMatches }),
+          downloadedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        log?.warn?.('clawbot: 图片下载失败', {
+          key: ref.key,
+          code: err?.code ?? '',
+          error: String(err?.message ?? err),
+        });
+      }
+      continue;
+    }
+
+    // 文件：只有总开关打开才下载，否则正文留占位、凭证照存
+    if (ref.kind !== 'file' || !fileTransfer) continue;
+
+    const declared = Number(ref.size) || 0;
+    if (declared > maxFileBytes) {
+      log?.info?.('clawbot: 文件超过上限，未下载', { key: ref.key, size: declared, max: maxFileBytes });
+      try {
+        await store.save(ref.key, { ...record, skipped: 'too-large', size: declared });
+      } catch {
+        /* 凭证写不进去不影响消息投递 */
+      }
+      continue;
+    }
 
     try {
-      const result = await downloadMedia(record, { fetchImpl, maxBytes });
-      if (!result.mime || !result.ext) {
-        throw Object.assign(new Error('无法识别的图片格式'), { code: 'unsupported' });
-      }
-      const path = await saveBlob(blobsDir, result.bytes, result.ext);
-      attachments.set(index, { path, mime: result.mime, bytes: result.bytes });
+      const result = await downloadMedia(record, { fetchImpl, maxBytes: maxFileBytes });
+      const shownName = sanitizeFileName(ref.name || 'file');
+      const saved = await saveNamedFile(blobsDir, result.bytes, shownName);
+      // 不给 bytes：文件不进模型附件（她要不要读由宿主决定）
+      attachments.set(index, {
+        path: saved.path,
+        name: shownName,
+        size: result.bytes.length,
+        mime: result.mime ?? null,
+      });
       await store.save(ref.key, {
         ...record,
-        blobPath: path,
-        mime: result.mime,
+        blobPath: saved.path,
+        savedName: saved.name,
+        mime: result.mime ?? '',
         bytes: result.bytes.length,
-        ...(result.sizeMatches === null ? {} : { sizeMatches: result.sizeMatches }),
         downloadedAt: new Date().toISOString(),
       });
     } catch (err) {
-      log?.warn?.('clawbot: 图片下载失败', {
+      log?.warn?.('clawbot: 文件下载失败', {
         key: ref.key,
         code: err?.code ?? '',
         error: String(err?.message ?? err),
