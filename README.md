@@ -145,7 +145,7 @@ pnpm add cortico-world-wechat-clawbridge
 | [docs/emoji-map.md](docs/emoji-map.md) | 气泡表情 → emoji 对应表 |
 | [docs/stickers.md](docs/stickers.md) | 图片表情包的目录与命名规则 |
 | [docs/release.md](docs/release.md) | 离线安装包的构建与踩坑 |
-| [docs/publish.md](docs/publish.md) | 发布到 GitHub / npm 的步骤 |
+| [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
 | [docs/voice-send-probe.md](docs/voice-send-probe.md) | 发语音为何不可行（实测记录） |
 | [docs/file-transfer-plan.md](docs/file-transfer-plan.md) | 收发文件的定案与实现（1.7.0） |
 | [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
