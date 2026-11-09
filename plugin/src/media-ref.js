@@ -235,11 +235,19 @@ export async function captureMediaItems({
     }
 
     // 文件：只有总开关打开才下载，否则正文留占位、凭证照存
-    if (ref.kind !== 'file' || !fileTransfer) continue;
+    if (ref.kind !== 'file') continue;
 
     const declared = Number(ref.size) || 0;
+    const shownName = sanitizeFileName(ref.name || 'file');
+
+    // 没下载时把原因一起带进事件正文：模型才知道该提醒用户开开关，还是文件太大
+    if (!fileTransfer) {
+      attachments.set(index, { skipped: 'disabled', name: shownName });
+      continue;
+    }
     if (declared > maxFileBytes) {
       log?.info?.('clawbot: 文件超过上限，未下载', { key: ref.key, size: declared, max: maxFileBytes });
+      attachments.set(index, { skipped: 'too-large', name: shownName, size: declared, limit: maxFileBytes });
       try {
         await store.save(ref.key, { ...record, skipped: 'too-large', size: declared });
       } catch {
@@ -250,7 +258,6 @@ export async function captureMediaItems({
 
     try {
       const result = await downloadMedia(record, { fetchImpl, maxBytes: maxFileBytes });
-      const shownName = sanitizeFileName(ref.name || 'file');
       const saved = await saveNamedFile(blobsDir, result.bytes, shownName);
       // 不给 bytes：文件不进模型附件（她要不要读由宿主决定）
       attachments.set(index, {
@@ -268,6 +275,7 @@ export async function captureMediaItems({
         downloadedAt: new Date().toISOString(),
       });
     } catch (err) {
+      attachments.set(index, { skipped: 'failed', name: shownName });
       log?.warn?.('clawbot: 文件下载失败', {
         key: ref.key,
         code: err?.code ?? '',
