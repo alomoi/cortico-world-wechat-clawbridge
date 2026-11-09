@@ -67,8 +67,8 @@ function fileErrorText(err) {
 
 /** `clawbridge_events` 的默认返回条数；调用方可用 limit 覆盖（上限 100）。 */
 const DEFAULT_EVENT_LIMIT = 10;
-/** 单个文件/视频的默认上限（字节），与配置默认一致。 */
-const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
+/** 单个文件/视频的默认上限（兆字节），与配置默认一致。 */
+const DEFAULT_MAX_FILE_MB = 100;
 const nowIso = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1286,9 +1286,11 @@ export class ClawbotWorld {
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_BYTES;
   }
 
+  /** 文件/视频上限（字节）：配置里填的是 MB（`maxFileMb`），这里换算。 */
   #maxFileBytes() {
-    const configured = Number(this.#cfg?.maxFileBytes);
-    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_FILE_BYTES;
+    const mb = Number(this.#cfg?.maxFileMb);
+    const value = Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_FILE_MB;
+    return Math.floor(value * 1024 * 1024);
   }
 
   async stop() {

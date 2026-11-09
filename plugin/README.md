@@ -91,7 +91,7 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 - **你发给她**：正文会带文件名、大小和本地路径（如 `[文件 报告.pdf 2.3 MB …/blobs/…]`），
   文件存在 `data\clawbot\blobs\`，按 `mediaRetentionDays`（默认 7 天）清理；
   想长期留就复制进 `workspace\`。
-- 文件名会被消毒后落盘（保留原名，去掉路径与非法字符），单件上限 `maxFileBytes`（默认 100 MiB；图片是另一个口径 32 MiB）。
+- 文件名会被消毒后落盘（保留原名，去掉路径与非法字符），单件上限 `maxFileMb`（默认 100 MB，直接按 MB 填；图片是另一个口径）。
 - **视频按文件处理**：同样落在 `data\clawbot\blobs\`，按容器命名（`…-wx-video.mp4`），正文带时长与大小。
   插件**不抽帧、不解析**，所以模型看不到画面——只是文件在那儿。
 - 插件**不解析文件内容**：能不能读、怎么读，看她手上的工具。
@@ -110,7 +110,7 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（`0` 关闭） |
 | `mediaRetentionDays` | 7 | 图片与凭证保留天数（`0` 不清理）；收下的文件同此 |
 | `fileTransfer` | false | 收发文件总开关 |
-| `maxFiles` / `maxFileBytes` | 2 / 100 MiB | 单次文件数、单件大小上限（与图片分开） |
+| `maxFiles` / `maxFileMb` | 2 / 100 MB | 单次文件数、单件大小上限（按 MB 填） |
 | `networkMode` / `proxyUrl` | inherit / — | 走系统代理或手动指定 |
 
 ### 看收到过的图

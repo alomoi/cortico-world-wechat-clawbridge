@@ -105,7 +105,7 @@ pnpm add cortico-world-wechat-clawbridge
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（0 关闭） |
 | `mediaRetentionDays` | 7 | 图片与凭证保留天数（0 不清理）；收下的文件同此 |
 | `fileTransfer` | false | 收发文件总开关（关着时两边都拒） |
-| `maxFiles` / `maxFileBytes` | 2 / 100 MiB | 单次文件数、单件大小上限（与图片的 32 MiB 是两个口径） |
+| `maxFiles` / `maxFileMb` | 2 / 100 MB | 单次文件数、单件大小上限（按 MB 填；图片上限另算，仍是字节） |
 | `networkMode` / `proxyUrl` / `forceIpv4` | inherit / — / false | 网络与代理 |
 
 ### 收到的图片在哪

@@ -50,7 +50,7 @@ file_item = {
 
 | 文件 | 改什么 |
 |---|---|
-| `plugin/src/config.js` | `DEFAULTS` 加 `fileTransfer:false` / `maxFiles:2` / `maxFileBytes:100MiB`；ZH/EN 文案；schema 三个字段 |
+| `plugin/src/config.js` | `DEFAULTS` 加 `fileTransfer:false` / `maxFiles:2` / `maxFileMb:100`（单位 MB）；ZH/EN 文案；schema 三个字段 |
 | `plugin/src/api.js` | 新增 `sendFile()`（照官方 `sendFileMessageWeixin`） |
 | `plugin/src/driver.js` | 新增 `sendFile()`：复用上传管道，只换 `media_type: 3` + `no_need_thumb: true` |
 | `plugin/src/files.js`（新） | 纯函数：`sanitizeFileName` / `namedBlobName` / `formatBytes` |
@@ -74,7 +74,7 @@ file_item = {
    - 防 Windows 保留名（`CON` / `PRN` / `AUX` / `NUL` / `COM1-9` / `LPT1-9`）；
    - 去掉首尾点与空格，长度截到 100；空名退化成 `file`；
    - 加时间戳前缀防重名，重名再加 `-1`、`-2`。
-4. **体积**：先用事件里的 `len` 判，超 `maxFileBytes` 不下载，正文只给文件名与「超出上限」。
+4. **体积**：先用事件里的 `len` 判，超上限不下载，正文只给文件名与「超出上限」。
 5. **空文件**不发。
 
 ## 五、新增测试（4 个）
