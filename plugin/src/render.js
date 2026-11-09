@@ -32,13 +32,13 @@ export function itemText(item, attachment = null) {
       // 对方给的文件名是外部输入：展示与落盘都只用消毒后的版本
       const name = sanitizeFileName(raw);
       const skipped = attachment?.skipped;
-      // 没下成也要说清原因：模型才知道是「开关没开」还是「文件太大」
-      if (skipped === 'disabled') return `[文件 ${name}，未下载（收发文件未开启）]`;
+      // 没下成也要说清原因（括号风格与本插件回执一致）：模型才知道是「开关没开」还是「文件太大」
+      if (skipped === 'disabled') return `[文件 ${name} 未下载(收发文件未开启)]`;
       if (skipped === 'too-large') {
         const limit = attachment.limit ? formatBytes(attachment.limit) : '';
-        return `[文件 ${name}，超过${limit ? ` ${limit}` : ''} 上限，未下载]`;
+        return `[文件 ${name} 超过上限(${limit || '?'}) 未下载]`;
       }
-      if (skipped === 'failed') return `[文件 ${name}，下载失败]`;
+      if (skipped === 'failed') return `[文件 ${name} 下载失败]`;
       // 没开「收发文件」时只有占位；开了并下载成功才给大小与本地路径
       if (!attachment?.path) return `[文件 ${name}]`;
       const shown = attachment.name || name;
