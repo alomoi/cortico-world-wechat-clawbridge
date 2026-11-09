@@ -28,8 +28,8 @@ export const DEFAULTS = Object.freeze({
   mediaAttach: true,
   /** 是否下载入站图片；关掉只保留凭证与正文路径。 */
   mediaDownload: true,
-  /** 单件媒体上限，默认 32 MiB（对齐 DeepSeek inline 限制）。 **只管图片**。 */
-  maxMediaBytes: 32 * 1024 * 1024,
+  /** 单件图片上限（**兆字节**），默认 32（对齐 DeepSeek inline 限制）。 **只管图片**。 */
+  maxMediaMb: 32,
   /** 单次回复最多拆成几条微信消息。 */
   maxSegments: 4,
   /** 多条消息之间的间隔（毫秒），0 表示不留间隔。 */
@@ -68,7 +68,7 @@ export const DEFAULTS = Object.freeze({
    * 用 MB 而不是字节：让人填 100 而不是 104857600。
    * 内部仍换算成字节（`maxFileMb * 1024 * 1024`）去做判断。
    *
-   * **和图片的 `maxMediaBytes` 是两个独立口径**：图片要进模型，受 inline 附件上限约束（32 MiB）；
+   * **和图片的 `maxMediaMb` 是两个独立口径**：图片要进模型，受 inline 附件上限约束（32 MiB）；
    * 文件与视频只落盘给路径、**不进模型**，所以没有模型侧理由卡在 32 MiB。
    * 100 MB 纯粹是「磁盘占用 + 内存里整块读一遍」的务实上限，
    * **不是微信的限制**——服务端真实上限未实测，需要时自行调整。
@@ -109,8 +109,8 @@ const ZH = {
     mediaAttachDesc: '把收到的图片作为附件交给模型。当前模型不支持视觉时会自动降级为只给本地路径。修改后需重启。',
     mediaDownload: '下载图片',
     mediaDownloadDesc: '收到图片时下载解密并落盘（<数据目录>/clawbot/blobs）。关闭后只保留占位与凭证。修改后需重启。',
-    maxMediaBytes: '单张大小上限（字节）',
-    maxMediaBytesDesc: '超过该大小的图片不下载，默认 33554432（32 MiB）。修改后需重启。',
+    maxMediaMb: '单张图片上限（MB）',
+    maxMediaMbDesc: '超过该大小的图片不下载（也不发），默认 32（MB）。按 MB 填，和文件上限同一个单位。修改后需重启。',
     maxSegments: '单次最多几条消息',
     maxSegmentsDesc: '一条回复用【…】拆成多条时，最多发几条（默认 4，上限 10），超出并入最后一条。修改后需重启。',
     segmentDelayMs: '消息间隔（毫秒）',
@@ -172,8 +172,8 @@ const EN = {
     mediaAttachDesc: 'Pass received images to the model as attachments. Falls back to the local path when the active model has no vision support. Restart after changing.',
     mediaDownload: 'Download images',
     mediaDownloadDesc: 'Download and decrypt incoming images into <dataDir>/clawbot/blobs. When off, only the placeholder and credentials remain. Restart after changing.',
-    maxMediaBytes: 'Max bytes per image',
-    maxMediaBytesDesc: 'Images larger than this are not downloaded. Default 33554432 (32 MiB). Restart after changing.',
+    maxMediaMb: 'Max size per image (MB)',
+    maxMediaMbDesc: 'Images larger than this are not downloaded or sent. Default 32 (MB). Same MB unit as the file limit. Restart after changing.',
     maxSegments: 'Max messages per reply',
     maxSegmentsDesc: 'How many WeChat messages one reply may split into via 【…】 (default 4, max 10); overflow merges into the last one. Restart after changing.',
     segmentDelayMs: 'Delay between messages (ms)',
@@ -254,10 +254,10 @@ export function configGroup(language = 'zh') {
           description: t.mediaDownloadDesc,
           'x-hot': false,
         },
-        [`${K}.maxMediaBytes`]: {
+        [`${K}.maxMediaMb`]: {
           type: 'integer',
-          title: t.maxMediaBytes,
-          description: t.maxMediaBytesDesc,
+          title: t.maxMediaMb,
+          description: t.maxMediaMbDesc,
           'x-hot': false,
         },
         [`${K}.maxSegments`]: {

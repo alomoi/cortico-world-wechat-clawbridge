@@ -23,7 +23,6 @@ import { ILinkDriver } from './driver.js';
 import { closeDispatcher, createDispatcher } from './network.js';
 import { ILinkStore } from './store.js';
 import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js';
-import { DEFAULT_MAX_BYTES } from './media.js';
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
@@ -67,6 +66,8 @@ function fileErrorText(err) {
 
 /** `clawbridge_events` 的默认返回条数；调用方可用 limit 覆盖（上限 100）。 */
 const DEFAULT_EVENT_LIMIT = 10;
+/** 单张图片的默认上限（兆字节），与配置默认一致（对齐 DeepSeek inline 限制）。 */
+const DEFAULT_MAX_MEDIA_MB = 32;
 /** 单个文件/视频的默认上限（兆字节），与配置默认一致。 */
 const DEFAULT_MAX_FILE_MB = 100;
 const nowIso = () => new Date().toISOString();
@@ -1281,9 +1282,11 @@ export class ClawbotWorld {
     });
   }
 
+  /** 图片上限（字节）：配置里填的是 MB（`maxMediaMb`），这里换算。 */
   #maxMediaBytes() {
-    const configured = Number(this.#cfg?.maxMediaBytes);
-    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_BYTES;
+    const mb = Number(this.#cfg?.maxMediaMb);
+    const value = Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_MEDIA_MB;
+    return Math.floor(value * 1024 * 1024);
   }
 
   /** 文件/视频上限（字节）：配置里填的是 MB（`maxFileMb`），这里换算。 */
