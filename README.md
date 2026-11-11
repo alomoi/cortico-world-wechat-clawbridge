@@ -134,6 +134,8 @@ pnpm add cortico-world-wechat-clawbridge
 | 事件瘦身 / 凭证外置 | — | ✅ |
 | 图片进模型 / 发图 / 表情包 | — | ✅ |
 | 分条 / 表情 / 正在输入 / 降采样 | — | ✅ |
+| 收发文件 / 视频落盘 | — | ✅（默认关闭） |
+| 收件人钉死绑定本人 | — | ✅（1.6.4 安全修正） |
 
 可与上游同时安装，但**同一时间只能启用一个**（两个 World 抢同一个微信会话会互相打架）。
 
@@ -149,7 +151,6 @@ pnpm add cortico-world-wechat-clawbridge
 | [docs/voice-send-probe.md](docs/voice-send-probe.md) | 发语音为何不可行（实测记录） |
 | [docs/file-transfer-plan.md](docs/file-transfer-plan.md) | 收发文件的定案与实现（1.7.0） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史（与 `plugin/CHANGELOG.md` 同步） |
-| [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
 
 > 安装者只需要看上面的「安装 / 使用说明」；`plugin/README.md` 是 npm 页面用的精简版。
 > 开发者相关（测试、打包脚本）不在公开仓库里，如需请提 issue 说明。
