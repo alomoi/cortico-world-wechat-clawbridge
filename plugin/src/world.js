@@ -208,7 +208,7 @@ export class ClawbotWorld {
   envPromptVars() {
     const names = new Set();
     for (const word of WECHAT_EMOJI_WORDS) {
-      // 只列中文名：`happy` / `shy` 这类英文 id 也认，但全塞进清单只会让她犯选择困难
+      // 只列中文名：`happy` / `shy` 这类英文 id 也认，但全塞进清单只会让桌宠犯选择困难
       if (!/^[A-Za-z]+$/.test(word)) names.add(word);
     }
     // 别名表里「内部名」那一侧：它存在的原因是微信那边叫别的名字，
@@ -217,6 +217,10 @@ export class ClawbotWorld {
       const name = wechat.replace(/^\[|\]$/g, '').trim();
       if (name) names.add(name);
     }
+    // 清单**故意只列**「Coopanion 自带的那几个 + 别名表里的内部名」：
+    // `judge()` 背后的白名单有 133 个微信表情，全塞进来太长，
+    // 而且会让桌宠以为只有这些能用。清单外的名字照样能发（judge 会放行），
+    // 所以下面那句「清单外也可能是真的」必须保留，否则桌宠会误判。
     return { 'clawbridge.emotes': [...names].join(' ') };
   }
 
@@ -1174,7 +1178,7 @@ export class ClawbotWorld {
         // envPromptVars() 的返回值填进这里（bot.ts 的 readDoc），值本身由插件现算。
         vars: [{
           name: 'clawbridge.emotes',
-          description: '微信表情清单：8 个内置中文名 + 别名表里的内部名，随配置实时变化。',
+          description: '微信表情清单：8 个内置中文名 + 别名表里的内部名，随配置实时变化。（微信原生表情远不止这些，清单外的名字也认，只是不列出来）',
         }],
       }],
     };
