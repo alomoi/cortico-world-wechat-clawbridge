@@ -150,6 +150,10 @@ export function splitScript(script, {
  * 不报错、不丢内容、也不打断她的写法习惯。
  *
  * `isWeChatEmoji(word)` 为真时原样保留；没闭合、含换行、含中英文括号的都不动。
+ *
+ * **它只是链路的后半段**：`world.js#toWeChatText()` 先 `applyAliases(outbound)`
+ * 把内部名换成微信名，再调这里兜底。单跑本函数验证 `[笑哭了]` 得到的是
+ * 「原样保留」，看着像别名没生效——那是只跑了一半，不是 bug（2026-11-14 演示翻车）。
  */
 const BRACKET_RE = /\[([^[\]\\n（）()]{1,12})\]/g;
 
