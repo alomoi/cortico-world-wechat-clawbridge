@@ -491,15 +491,15 @@ export default {
           try {
             const aliases = collect();
             const wechatEmoji = toggle.checked;
-            // 框架配置面写回：校验、持久化、热更新都由宿主负责；
-            // 不用自己改 config.json，也不用重启。
+            // 别名表存成 JSON 文本：框架的配置面只认 schema 里声明过的标量类型，
+            // 对象不是合法值（会被当未知键拒掉），而纯字符串两栏都能编辑。
             await ctx.setConfig(`world:${WORLD_ID}`, {
-              [`worlds.${WORLD_ID}.emojiAliases`]: aliases,
+              [`worlds.${WORLD_ID}.emojiAliases`]: JSON.stringify(aliases),
               [`worlds.${WORLD_ID}.wechatEmoji`]: wechatEmoji,
             });
             // 再通知服务端：配置热更新有时要等下一轮，这里让它立刻换。
             try {
-              await ctx.invoke('save', { aliases, wechatEmoji });
+              await ctx.invoke('save', [{ aliases, wechatEmoji }]);
             } catch {
               // 内存更新失败不影响已落盘的配置，下一轮照样生效。
             }

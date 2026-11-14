@@ -668,14 +668,35 @@ export class ClawbotWorld {
     };
   }
 
+  /**
+   * 读出别名表。
+   *
+   * 配置里它可能是三样东西：`DEFAULTS` 的对象、设置栏里那行 JSON 字符串
+   * （`coerceGroupValues` 只认 string，写回来就是字符串）、或者面板当场写内存的对象。
+   * 解析失败的字符串一律当「没配」，回落到默认表而不是清空——手抖少个括号不该让翻译全消失。
+   */
+  #readAliases() {
+    const raw = this.#cfg?.emojiAliases;
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch {
+        this.#host?.log?.warn?.('clawbot: 表情别名不是合法的 JSON，先用默认表', { raw: raw.slice(0, 120) });
+      }
+      return resolveAliases(undefined);
+    }
+    return resolveAliases(raw);
+  }
+
   /** 微信名 ↔ 内部名的两向表，按配置现算（别名表可热改）。 */
   #aliasTables() {
-    return buildAliasTables(resolveAliases(this.#cfg?.emojiAliases));
+    return buildAliasTables(this.#readAliases());
   }
 
   /** 判断一个 `[词]` 是不是微信真认识的表情名；不认识的转圆括号。 */
   #isWeChatEmoji() {
-    return createWeChatEmojiJudge(resolveAliases(this.#cfg?.emojiAliases), WECHAT_EMOJI_WORDS);
+    return createWeChatEmojiJudge(this.#readAliases(), WECHAT_EMOJI_WORDS);
   }
 
   #toolStatus() {
@@ -759,7 +780,7 @@ export class ClawbotWorld {
     if (panel === 'emotes') {
       if (method === 'list') {
         return {
-          aliases: { ...resolveAliases(this.#cfg?.emojiAliases) },
+          aliases: { ...this.#readAliases() },
           wechatEmoji: this.#wechatEmojiEnabled(),
         };
       }
@@ -777,7 +798,7 @@ export class ClawbotWorld {
         }
         if (typeof payload.wechatEmoji === 'boolean') patch.wechatEmoji = payload.wechatEmoji;
         if (Object.keys(patch).length === 0) throw new Error('没有要保存的内容');
-        // 只改内存：她下一条消息立刻用新表。宿主没有给 World 暴露写配置的接口
+        // 只改内存：桌宠下一条消息立刻用新表。宿主没有给 World 暴露写配置的接口
         // （WorldHost 里没有 setConfig），持久化只能交给 WebUI 的 ctx.setConfig。
         this.#cfg = { ...(this.#cfg ?? {}), ...patch };
         return { ok: true };

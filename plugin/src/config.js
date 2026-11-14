@@ -130,6 +130,8 @@ const ZH = {
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
     emojiReplaceDesc: '把【shy】这类表情标记换成 😳 这样的微信 emoji；动作标记始终只当分段符。关掉后所有标记都只分段。修改后需重启。',
+    emojiAliases: '表情别名（JSON）',
+    emojiAliasesDesc: '微信原生表情和桌宠内部名字的双向对照，例如 {"[破涕为笑]": "[笑哭了]"}：左边是微信里的名字，右边是 ta 内部用的名字，两边都带方括号。一般不用手改——「微信表情」面板里有开关和一张能增删的表，改完会自动写回这里。',
     maxImages: '单次最多几张图',
     maxImagesDesc: '一次回复里最多附带几张图片，默认 2，上限 4。图片在文字之后按顺序发出。修改后需重启。',
     typingIndicator: '显示「正在输入」',
@@ -195,6 +197,8 @@ const EN = {
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',
     emojiReplaceDesc: 'Replace expression markers like 【shy】 with WeChat emoji such as 😳. Motion markers always act as plain separators. When off, every marker only splits. Restart after changing.',
+    emojiAliases: 'Emoji aliases (JSON)',
+    emojiAliasesDesc: 'Two-way map between native WeChat emote names and the pet\'s internal names, e.g. {"[破涕为笑]": "[笑哭了]"}: left is the WeChat name, right is the name the pet uses internally, brackets on both sides. You usually do not edit this by hand — the "WeChat emotes" panel has the switch and an editable table and writes back here.',
     maxImages: 'Max images per reply',
     maxImagesDesc: 'How many images one reply may attach, default 2, max 4. Images go out after the text in order. Restart after changing.',
     typingIndicator: 'Show typing indicator',
@@ -301,6 +305,18 @@ export function configGroup(language = 'zh') {
           title: t.maxImages,
           description: t.maxImagesDesc,
           'x-hot': false,
+        },
+        // 别名表在设置栏里显示成一行 JSON 文本，不是一个对象：
+        // WebUI 把 object 类型当只读、一渲染就是 null（用户看到的就是个坏掉的项），
+        // 而 `coerceGroupValues` 只接受 schema 里声明过的键——把这张表从 schema
+        // 撤掉，面板的 ctx.setConfig 就会因「未知键」直接报错。
+        // 存成字符串两头都顺：设置栏能看能改，面板也能写回来，默认值仍是 DEFAULTS 里的对象。
+        [`${K}.emojiAliases`]: {
+          type: 'string',
+          title: t.emojiAliases,
+          description: t.emojiAliasesDesc,
+          default: JSON.stringify(DEFAULTS.emojiAliases),
+          'x-hot': true,
         },
         [`${K}.typingIndicator`]: {
           type: 'boolean',
