@@ -10,6 +10,8 @@
  * 拆开是必须的——实测一张表连替换两遍，`[破涕为笑]` 转一圈回来等于没换。
  */
 
+import { isWeChatBuiltinEmote } from './wechat-emotes.js';
+
 /** 默认别名：`{ 微信名: 内部名 }`。 */
 export const DEFAULT_ALIASES = Object.freeze({
   '[破涕为笑]': '[笑哭了]',
@@ -110,9 +112,16 @@ export function applyAliases(text, table) {
 /**
  * 一次性查表：`[微信名]` → 内部名，用于判定「这个词要不要转圆括号」。
  *
- * 微信真正认识的名字是 109 个内置表情，插件不维护这份白名单（微信会加，追不完）；
- * 能确定「微信认」的只有两处：别名表里出现过的微信名，以及插件自己映射出来的那 8 个。
- * 其余的一律当自编词转圆括号——这是良性降级，不丢内容。
+ * 三处来源，任何一处命中就算「微信认」：
+ * 1. 微信内置表情白名单（`wechat-emotes.js`，`[旺柴]` `[捂脸]` `[OK]` 这些）；
+ * 2. 别名表里出现过的微信名（用户自己维护的）；
+ * 3. 插件自己映射出来的那 8 个。
+ *
+ * 全都不命中的才当自编词转圆括号——这是良性降级，不丢内容。
+ *
+ * 历史教训（2026-11-14）：最初只查 2 和 3，理由是「微信会加新表情，追不完」。
+ * 结果 `[旺柴]` 这种板上钉钉的微信表情也被转成了 `（旺柴）`，真机实测当场翻车。
+ * 「追不完」不等于「别追」——漏收的代价是把能用的表情弄坏，比多维护一张表严重得多。
  *
  * @param {Record<string, string>|null|undefined} aliases
  * @param {Iterable<string>} builtinWeChatNames - 插件映射出来的微信表情名（不带括号）
@@ -132,6 +141,8 @@ export function createWeChatEmojiJudge(aliases, builtinWeChatNames) {
   }
   return (word) => {
     const key = String(word ?? '').trim();
-    return key !== '' && known.has(key);
+    if (!key) return false;
+    if (known.has(key)) return true;
+    return isWeChatBuiltinEmote(key);
   };
 }

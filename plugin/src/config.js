@@ -43,6 +43,12 @@ export const DEFAULTS = Object.freeze({
    * 键是微信的名字，值是桌宠内部的名字；插件自动拆成正反两份单向表。
    */
   emojiAliases: { '[破涕为笑]': '[笑哭了]' },
+  /**
+   * 是否启用「微信原生表情」那套（`[害羞]` 原样发，微信画成表情图）。
+   * 关掉后回到 1.7.4 的老办法：表情一律换成 Unicode emoji（😳），
+   * 因为电脑版微信不渲染手打的方括号表情名，只显示 `[害羞]` 四个字。
+   */
+  wechatEmoji: true,
   /** 单次最多发几张图。 */
   maxImages: 2,
   /** 图片 mid_size 取值：cipher（密文长度，官方注释口径）或 plain（明文字节数）。 */
@@ -126,6 +132,8 @@ const ZH = {
     emojiReplaceDesc: '把【shy】这类表情标记换成 😳 这样的微信 emoji；动作标记始终只当分段符。关掉后所有标记都只分段。修改后需重启。',
     emojiAliases: '表情别名表',
     emojiAliasesDesc: '微信名 ↔ 桌宠内部名的双向翻译，例如 {"[破涕为笑]": "[笑哭了]"}：收进来换成内部名，发出去换回微信名。在「表情」面板里增删。',
+    wechatEmoji: '用微信原生表情',
+    wechatEmojiDesc: '打开后【害羞】发成 [害羞]，手机微信会画成表情图（电脑版微信只显示方括号里的字）。关掉后回到 😳 这样的 emoji，两端都显示得出来。修改后需重启。',
     maxImages: '单次最多几张图',
     maxImagesDesc: '一次回复里最多附带几张图片，默认 2，上限 4。图片在文字之后按顺序发出。修改后需重启。',
     typingIndicator: '显示「正在输入」',
@@ -193,6 +201,8 @@ const EN = {
     emojiReplaceDesc: 'Replace expression markers like 【shy】 with WeChat emoji such as 😳. Motion markers always act as plain separators. When off, every marker only splits. Restart after changing.',
     emojiAliases: 'Emoji alias table',
     emojiAliasesDesc: 'Two-way translation between WeChat names and the pet\'s internal names, e.g. {"[破涕为笑]": "[笑哭了]"}: inbound messages are translated to internal names, outbound messages back to WeChat names. Edit them in the "Emotes" panel.',
+    wechatEmoji: 'Use native WeChat emotes',
+    wechatEmojiDesc: 'When on, 【害羞】 goes out as [害羞] and the phone app draws a WeChat sticker (desktop WeChat shows the bracketed text instead). When off, it falls back to emoji like 😳 that render on both. Restart after changing.',
     maxImages: 'Max images per reply',
     maxImagesDesc: 'How many images one reply may attach, default 2, max 4. Images go out after the text in order. Restart after changing.',
     typingIndicator: 'Show typing indicator',
@@ -300,6 +310,12 @@ export function configGroup(language = 'zh') {
           // 不能因为缺键就退回 DEFAULTS，否则用户删不干净。
           default: { '[破涕为笑]': '[笑哭了]' },
           'x-hot': true,
+        },
+        [`${K}.wechatEmoji`]: {
+          type: 'boolean',
+          title: t.wechatEmoji,
+          description: t.wechatEmojiDesc,
+          'x-hot': false,
         },
         [`${K}.maxImages`]: {
           type: 'integer',

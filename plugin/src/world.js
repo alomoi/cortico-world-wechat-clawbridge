@@ -601,13 +601,20 @@ export class ClawbotWorld {
    */
   #toWeChatText(text) {
     const value = String(text ?? '');
+    if (!this.#wechatEmojiEnabled()) return value.trim();
     const aliased = applyAliases(value, this.#aliasTables().outbound);
     return bracketToParen(aliased, this.#isWeChatEmoji()).trim();
   }
 
   /** 入站正文：微信名换成内部名（`[破涕为笑]` → `[笑哭了]`）。 */
   #toInnerText(text) {
+    if (!this.#wechatEmojiEnabled()) return text;
     return applyAliases(text, this.#aliasTables().inbound);
+  }
+
+  /** 「用微信原生表情」总开关，默认开；关掉就整条微信表情链路都不生效。 */
+  #wechatEmojiEnabled() {
+    return this.#cfg?.wechatEmoji !== false;
   }
 
   /** 单次最多发几条（默认 4，上限 10）。 */
@@ -635,9 +642,13 @@ export class ClawbotWorld {
   #markerResolver() {
     if (this.#cfg?.emojiReplace === false) return () => '';
     const overrides = this.#cfg?.emojiOverrides;
+    const wechatNative = this.#wechatEmojiEnabled();
     return (word) => {
-      const wechat = resolveWeChatEmoji(word);
-      if (wechat) return `[${wechat}]`;
+      // 总开关关掉时退回 1.7.4 的老办法：一律 Unicode emoji，两端都看得见。
+      if (wechatNative) {
+        const wechat = resolveWeChatEmoji(word);
+        if (wechat) return `[${wechat}]`;
+      }
       const emoji = resolveEmoji(word, overrides);
       if (emoji) return emoji;
       // 动作词本来就是给气泡用的，微信里没有对应表现，静默丢掉；
