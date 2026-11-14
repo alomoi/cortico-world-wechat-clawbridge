@@ -141,6 +141,34 @@ export function splitScript(script, {
   return { segments, markers, truncated };
 }
 
+/**
+ * 把认不出的 `[词]` 转成全角圆括号 `（词）`（2026-11-14 定案）。
+ *
+ * 背景：`[破涕为笑]` 这种微信自己会画成表情图，插件原样透传就行；
+ * 但桌宠自编的 `[歪头看鱼]` 在微信里只会显示成方括号加文字，读起来像坏掉的表情。
+ * 转成 `（歪头看鱼）` 就成了聊天里本来就有的「（摸摸头）」式旁白——
+ * 不报错、不丢内容、也不打断她的写法习惯。
+ *
+ * `isWeChatEmoji(word)` 为真时原样保留；没闭合、含换行、含中英文括号的都不动。
+ */
+const BRACKET_RE = /\[([^[\]\\n（）()]{1,12})\]/g;
+
+export function bracketToParen(text, isWeChatEmoji = () => false) {
+  const value = String(text ?? '');
+  if (!value.includes('[')) return value;
+  return value.replace(BRACKET_RE, (whole, raw) => {
+    const word = String(raw ?? '').trim();
+    if (!word) return whole;
+    let known = false;
+    try {
+      known = isWeChatEmoji(word) === true;
+    } catch {
+      known = false;
+    }
+    return known ? whole : `（${word}）`;
+  });
+}
+
 /** 句末标点：中文全角与英文半角都算。 */
 const SENTENCE_END = /[。！？；…!?;\n]/;
 

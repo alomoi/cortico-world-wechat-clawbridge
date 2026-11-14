@@ -99,6 +99,20 @@ export function resolveEmoji(word, overrides = null) {
 }
 
 /**
+ * 是否**只是**动作词（不是表情）。
+ *
+ * `【词】` 分条后如果词解析不出 emoji，只有动作词该被静默丢掉；
+ * 表情词（如 `平静`）和陌生词都要留下痕迹，不能悄悄吞。
+ */
+export function isMotionOnly(word) {
+  const key = String(word ?? '').trim();
+  if (!key) return false;
+  const lower = key.toLowerCase();
+  if (hasOwn(EMOJI_MAP, key) || hasOwn(EMOJI_MAP, lower)) return false;
+  return MOTION_WORDS.has(key) || MOTION_WORDS.has(lower);
+}
+
+/**
  * 是否是已知的身体包词汇（表情或动作）。
  *
  * 行内标记 `<…>` 只替换已知词，避免把 `<div>`、`a<b` 这类普通文本吃掉。
@@ -111,4 +125,53 @@ export function isKnownWord(word) {
     hasOwn(EMOJI_MAP, key) || hasOwn(EMOJI_MAP, lower)
     || MOTION_WORDS.has(key) || MOTION_WORDS.has(lower)
   );
+}
+
+/**
+ * 表情词 → 微信原版表情名（2026-11-14 定案，见 docs/emoji-wechat-map.md）。
+ *
+ * 只有**语义几乎完全等同**的 8 个才换。其余 11 个继续用 Unicode：
+ * 换过去会产生语义漂移（`[微笑]`是冷脸、`[色]` 对`期待`太色、
+ * `[撇嘴]` 和`嘟嘴`方向相反……），宁可保留 emoji 也不说错话。
+ *
+ * 值不带方括号，由调用方拼。
+ */
+const WECHAT_EMOJI = Object.freeze({
+  shy: '害羞',
+  surprised: '惊讶',
+  smug: '得意',
+  confused: '疑问',
+  sleepy: '困',
+  happy: '呲牙',
+  angry: '发怒',
+  scared: '惊恐',
+});
+
+/** 内部 id / 中文名 → 微信表情名。 */
+export const WECHAT_EMOJI_MAP = Object.freeze(
+  ENTRIES.reduce((acc, [id, names]) => {
+    if (!hasOwn(WECHAT_EMOJI, id)) return acc;
+    const wechat = WECHAT_EMOJI[id];
+    acc[id] = wechat;
+    for (const name of names) acc[name] = wechat;
+    return acc;
+  }, {}),
+);
+
+/** 有微信对应名字的 expression，供面板与提示词清单使用。 */
+export const WECHAT_EMOJI_WORDS = Object.freeze(Object.keys(WECHAT_EMOJI_MAP));
+
+/**
+ * 把一个标记词解析成微信表情名（不带方括号）。
+ *
+ * @param {string} word - 如 `shy` / `害羞` / `nod`
+ * @returns {string} 微信表情名，如 `害羞`；`''` 表示这个词没有安全的微信对应
+ */
+export function resolveWeChatEmoji(word) {
+  const key = String(word ?? '').trim();
+  if (!key) return '';
+  if (hasOwn(WECHAT_EMOJI_MAP, key)) return WECHAT_EMOJI_MAP[key];
+  const lower = key.toLowerCase();
+  if (hasOwn(WECHAT_EMOJI_MAP, lower)) return WECHAT_EMOJI_MAP[lower];
+  return '';
 }

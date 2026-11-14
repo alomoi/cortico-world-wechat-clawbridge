@@ -38,6 +38,11 @@ export const DEFAULTS = Object.freeze({
   emojiReplace: true,
   /** 用户自定义映射：{ "翻白眼": "🙄" }，只能写在 config.json 里。 */
   emojiOverrides: {},
+  /**
+   * 微信名 ↔ 内部名的双向别名表：{ "[破涕为笑]": "[笑哭了]" }。
+   * 键是微信的名字，值是桌宠内部的名字；插件自动拆成正反两份单向表。
+   */
+  emojiAliases: { '[破涕为笑]': '[笑哭了]' },
   /** 单次最多发几张图。 */
   maxImages: 2,
   /** 图片 mid_size 取值：cipher（密文长度，官方注释口径）或 plain（明文字节数）。 */
@@ -90,6 +95,8 @@ const ZH = {
   panelDesc: '用手机微信扫码，把这个微信号的 ClawBot 接到这里。',
   panelMediaTitle: '收到的图片',
   panelMediaDesc: '微信发来的图片（已解密落盘），按时间倒序；缩略图仅用于查看，发出去的是原图。',
+  panelEmoteTitle: '表情',
+  panelEmoteDesc: '微信名 ↔ 桌宠内部名的双向别名：她发内部名会换成微信名离开，收到微信名会换成内部名给她看。',
   promptTitle: '提示词',
   badgeAccount: '账号',
   badgeLast: '最近消息',
@@ -117,6 +124,8 @@ const ZH = {
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
     emojiReplaceDesc: '把【shy】这类表情标记换成 😳 这样的微信 emoji；动作标记始终只当分段符。关掉后所有标记都只分段。修改后需重启。',
+    emojiAliases: '表情别名表',
+    emojiAliasesDesc: '微信名 ↔ 桌宠内部名的双向翻译，例如 {"[破涕为笑]": "[笑哭了]"}：收进来换成内部名，发出去换回微信名。在「表情」面板里增删。',
     maxImages: '单次最多几张图',
     maxImagesDesc: '一次回复里最多附带几张图片，默认 2，上限 4。图片在文字之后按顺序发出。修改后需重启。',
     typingIndicator: '显示「正在输入」',
@@ -153,6 +162,8 @@ const EN = {
   panelDesc: 'Scan with WeChat to bind this ClawBot contact.',
   panelMediaTitle: 'Received images',
   panelMediaDesc: 'Images received from WeChat (decrypted on disk), newest first. Thumbnails are for viewing only; sending uses the original.',
+  panelEmoteTitle: 'Emotes',
+  panelEmoteDesc: 'Two-way aliases between WeChat names and the pet\'s internal names: her internal names leave as WeChat names, and incoming WeChat names are translated for her.',
   promptTitle: 'Prompt',
   badgeAccount: 'Account',
   badgeLast: 'Last message',
@@ -180,6 +191,8 @@ const EN = {
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',
     emojiReplaceDesc: 'Replace expression markers like 【shy】 with WeChat emoji such as 😳. Motion markers always act as plain separators. When off, every marker only splits. Restart after changing.',
+    emojiAliases: 'Emoji alias table',
+    emojiAliasesDesc: 'Two-way translation between WeChat names and the pet\'s internal names, e.g. {"[破涕为笑]": "[笑哭了]"}: inbound messages are translated to internal names, outbound messages back to WeChat names. Edit them in the "Emotes" panel.',
     maxImages: 'Max images per reply',
     maxImagesDesc: 'How many images one reply may attach, default 2, max 4. Images go out after the text in order. Restart after changing.',
     typingIndicator: 'Show typing indicator',
@@ -277,6 +290,16 @@ export function configGroup(language = 'zh') {
           title: t.emojiReplace,
           description: t.emojiReplaceDesc,
           'x-hot': false,
+        },
+        [`${K}.emojiAliases`]: {
+          type: 'object',
+          title: t.emojiAliases,
+          description: t.emojiAliasesDesc,
+          additionalProperties: { type: 'string' },
+          // 默认值交给 schema 合并：面板删到空时只剩 `{}`，
+          // 不能因为缺键就退回 DEFAULTS，否则用户删不干净。
+          default: { '[破涕为笑]': '[笑哭了]' },
+          'x-hot': true,
         },
         [`${K}.maxImages`]: {
           type: 'integer',

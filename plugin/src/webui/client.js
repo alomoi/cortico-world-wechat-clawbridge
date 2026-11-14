@@ -2,8 +2,12 @@
  * 控制台「微信绑定」面板（浏览器侧 ES 模块）。
  *
  * 只使用 ctx.ui 和 ctx.invoke；服务端方法见 world.js 的 #invokePanel。
+ * 表情别名表走 ctx.setConfig 写回框架配置面。
  * 二维码由服务端生成 data URL，这里只负责显示。
  */
+
+/** 必须与 plugin/src/config.js 的 `ID` 一致（面板是独立 ES 模块，不能 import 服务端代码）。 */
+const WORLD_ID = 'clawbridge';
 
 const ZH = {
   title: '微信绑定',
@@ -45,6 +49,17 @@ const ZH = {
   mediaSending: '（发送时用的是原图）',
   mediaTitle: '收到的图片',
   mediaDesc: '微信发来的图片，按时间倒序；缩略图只用于查看，发出去的是原图。',
+  emoteTitle: '表情别名',
+  emoteDesc: '左边是微信那边的名字，右边是桌宠内部的名字。她发「内部名」会换成「微信名」离开；收到「微信名」会换成「内部名」给她看。两列都要带方括号。',
+  emoteWechat: '微信名',
+  emoteInner: '内部名',
+  emoteAdd: '添加一行',
+  emoteSave: '保存',
+  emoteSaved: '已保存，下一句回复就生效。',
+  emoteEmpty: '还没有别名。',
+  emoteBad: '保存失败',
+  emoteHint: '内置的 8 个表情（害羞、惊讶、得意、疑惑、困、开心、生气、害怕）不用写在这里，插件自己会换。',
+  emoteNameBad: '两边都要写成 [名字] 的样子',
   errors: {
     verify_blocked: '验证码多次错误，请稍后再试。',
     expired: '二维码多次失效，请重新生成。',
@@ -95,6 +110,17 @@ const EN = {
   mediaSending: '(sending uses the original)',
   mediaTitle: 'Received images',
   mediaDesc: 'Images received from WeChat, newest first. Thumbnails are for viewing only; sending uses the original.',
+  emoteTitle: 'Emoji aliases',
+  emoteDesc: 'Left is the WeChat name, right is the pet\'s internal name. When she writes the internal name it leaves as the WeChat name; when the WeChat name arrives it is translated to the internal name for her. Both columns need the brackets.',
+  emoteWechat: 'WeChat name',
+  emoteInner: 'Internal name',
+  emoteAdd: 'Add a row',
+  emoteSave: 'Save',
+  emoteSaved: 'Saved; takes effect on her next message.',
+  emoteEmpty: 'No aliases yet.',
+  emoteBad: 'Could not save',
+  emoteHint: 'The 8 built-in expressions (shy, surprised, smug, confused, sleepy, happy, angry, scared) are already translated by the plugin; no need to list them here.',
+  emoteNameBad: 'Both sides must look like [name]',
   errors: {
     verify_blocked: 'Too many wrong codes; try again later.',
     expired: 'The QR code expired repeatedly; generate a new one.',
@@ -347,6 +373,127 @@ export default {
             message.classList.add('bad');
           } finally {
             release.dispose();
+          }
+        }
+
+        await load();
+      },
+    },
+    emotes: {
+      mount: async (ctx) => {
+        const { ui, root } = ctx;
+        const zh = String(ctx.language ?? '').startsWith('zh');
+        const S = zh ? ZH : EN;
+
+        const card = ui.sheet({ title: S.emoteTitle, desc: S.emoteDesc });
+        const rows = ui.h('div');
+        rows.style.display = 'flex';
+        rows.style.flexDirection = 'column';
+        rows.style.gap = '8px';
+        const message = ui.msgline();
+        const saveButton = ui.button(S.emoteSave, { onClick: () => { void save(); } });
+        const addButton = ui.button(S.emoteAdd, { onClick: () => { appendRow('', ''); markDirty(); } });
+        const bar = ui.rowbar();
+        bar.append(addButton, saveButton);
+
+        const hint = ui.h('div');
+        hint.style.fontSize = '11px';
+        hint.style.opacity = '.62';
+        hint.textContent = S.emoteHint;
+
+        card.body.append(rows, hint, bar, message);
+        root.append(card.el);
+
+        /** 改了没存的提示：按钮上点出来就够了，不用额外状态机。 */
+        const markDirty = () => {
+          saveButton.disabled = false;
+        };
+
+        /** 收一行：[微信名] → [内部名]。两边不带方括号时自动补上，省得她手打。 */
+        function normalizeName(value) {
+          const text = String(value ?? '').trim();
+          if (!text) return '';
+          if (text.startsWith('[') && text.endsWith(']')) return text;
+          if (text.startsWith('[') || text.endsWith(']')) return ''; // 半截括号，别猜
+          return `[${text}]`;
+        }
+
+        function appendRow(wechat, inner) {
+          const row = ui.rowbar();
+          const left = ui.h('input');
+          left.type = 'text';
+          left.value = wechat;
+          left.placeholder = S.emoteWechat;
+          left.style.flex = '1';
+          const arrow = ui.h('span');
+          arrow.textContent = '→';
+          arrow.style.opacity = '.5';
+          const right = ui.h('input');
+          right.type = 'text';
+          right.value = inner;
+          right.placeholder = S.emoteInner;
+          right.style.flex = '1';
+          const del = ui.button('✕', {
+            onClick: () => {
+              row.remove();
+              markDirty();
+            },
+          });
+          left.addEventListener('input', markDirty);
+          right.addEventListener('input', markDirty);
+          row.append(left, arrow, right, del);
+          rows.append(row);
+          return row;
+        }
+
+        function collect() {
+          const out = {};
+          for (const row of [...rows.children]) {
+            const inputs = row.querySelectorAll('input');
+            const wechat = normalizeName(inputs[0]?.value);
+            const inner = normalizeName(inputs[1]?.value);
+            if (!wechat && !inner) continue; // 空行直接丢
+            if (!wechat || !inner) throw new Error(S.emoteNameBad);
+            out[wechat] = inner;
+          }
+          return out;
+        }
+
+        async function save() {
+          const release = ui.disable(saveButton);
+          message.classList.remove('bad');
+          try {
+            const aliases = collect();
+            // 走框架配置面写回：校验、热更新、持久化都由宿主负责，
+            // 不用自己改 config.json，也不用重启。
+            await ctx.setConfig(`world:${WORLD_ID}`, { [`worlds.${WORLD_ID}.emojiAliases`]: aliases });
+            message.textContent = S.emoteSaved;
+          } catch (error) {
+            message.textContent = `${S.emoteBad}: ${String(error?.message ?? error)}`;
+            message.classList.add('bad');
+          } finally {
+            release.dispose();
+          }
+        }
+
+        async function load() {
+          message.classList.remove('bad');
+          message.textContent = S.loading;
+          try {
+            const aliases = await ctx.invoke('list');
+            rows.replaceChildren();
+            const entries = Object.entries(aliases && typeof aliases === 'object' ? aliases : {});
+            for (const [wechat, inner] of entries) appendRow(wechat, String(inner ?? ''));
+            if (entries.length === 0) {
+              const empty = ui.h('div');
+              empty.style.opacity = '.62';
+              empty.textContent = S.emoteEmpty;
+              rows.append(empty);
+            }
+            message.textContent = '';
+          } catch (error) {
+            message.textContent = `${S.emoteBad}: ${String(error)}`;
+            message.classList.add('bad');
           }
         }
 

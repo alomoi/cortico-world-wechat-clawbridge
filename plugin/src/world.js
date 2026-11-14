@@ -26,13 +26,14 @@ import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js'
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
-import { limitSegments, splitLongText, splitScript, stripLeakedTags } from './segments.js';
+import { limitSegments, splitLongText, splitScript, bracketToParen, stripLeakedTags } from './segments.js';
 import { isInsideAnyResolved } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
 import { DEFAULT_MAX_EDGE, DEFAULT_QUALITY, downscaleForModel } from './resize.js';
 import { findSticker, stickerNameOf } from './stickers.js';
-import { isKnownWord, resolveEmoji } from './emoji-map.js';
+import { WECHAT_EMOJI_WORDS, isKnownWord, isMotionOnly, resolveEmoji, resolveWeChatEmoji } from './emoji-map.js';
+import { applyAliases, buildAliasTables, createWeChatEmojiJudge, resolveAliases } from './alias.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 const msgOf = (err) => (err instanceof Error ? err.message : String(err));
@@ -196,8 +197,25 @@ export class ClawbotWorld {
     this.#blobsDir = join(this.#dataDir, DATA_ID, 'blobs');
   }
 
+  /**
+   * 提示词变量：让 `ENV_PROMPT.md` 里的 `{{clawbridge.emotes}}` 展开成**此刻真正能用**的表情清单。
+   *
+   * 清单是代码现算的（内置 8 个微信映射 + 别名表里的内部名），
+   * 所以不需要人维护——1.7.1 那张手写词表失同步的问题从根上没了。
+   */
   envPromptVars() {
-    return {};
+    const names = new Set();
+    for (const word of WECHAT_EMOJI_WORDS) {
+      // 只列中文名：`happy` / `shy` 这类英文 id 也认，但全塞进清单只会让她犯选择困难
+      if (!/^[A-Za-z]+$/.test(word)) names.add(word);
+    }
+    // 别名表里「内部名」那一侧：它存在的原因是微信那边叫别的名字，
+    // 所以对桌宠来说它就是一个可用的内部表情名。
+    for (const [, wechat] of this.#aliasTables().inbound) {
+      const name = wechat.replace(/^\[|\]$/g, '').trim();
+      if (name) names.add(name);
+    }
+    return { 'clawbridge.emotes': [...names].join(' ') };
   }
 
   /**
@@ -239,7 +257,7 @@ export class ClawbotWorld {
         `clawbridge: 剥掉模型漏出的标签 ${rawScript.length - cleaned.length} 个字符（正文实际 ${cleaned.trim().length} 字）`,
       );
     }
-    const script = cleaned.trim();
+    const script = this.#toWeChatText(cleaned);
     const imageRefs = (Array.isArray(args?.images) ? args.images : [])
       .map((ref) => String(ref ?? '').trim())
       .filter(Boolean)
@@ -573,6 +591,25 @@ export class ClawbotWorld {
     return roots.map((root) => resolve(String(root)));
   }
 
+  /**
+   * 出站正文的最后一次整形：别名 → 圆括号 → trim。
+   *
+   * 顺序要紧：
+   * 1. **先**把内部名换成微信名（`[笑哭了]` → `[破涕为笑]`）；
+   * 2. **再**把剩下的非微信名 `[自编词]` 转圆括号。
+   * 反过来会把刚换好的微信名又转成圆括号——白换。
+   */
+  #toWeChatText(text) {
+    const value = String(text ?? '');
+    const aliased = applyAliases(value, this.#aliasTables().outbound);
+    return bracketToParen(aliased, this.#isWeChatEmoji()).trim();
+  }
+
+  /** 入站正文：微信名换成内部名（`[破涕为笑]` → `[笑哭了]`）。 */
+  #toInnerText(text) {
+    return applyAliases(text, this.#aliasTables().inbound);
+  }
+
   /** 单次最多发几条（默认 4，上限 10）。 */
   #maxSegments() {
     const value = Number(this.#cfg?.maxSegments);
@@ -588,11 +625,37 @@ export class ClawbotWorld {
     return Math.max(0, Math.round(base * (0.7 + Math.random() * 0.6)));
   }
 
-  /** 标记 → 前缀文字：表情换 emoji，动作/未知词返回空串。 */
+  /**
+   * 标记 → 前缀文字：表情换成微信原版表情名（`[害羞]`），动作/未知词返回空串。
+   *
+   * `【词】` 的分条逻辑一点没动，只把表情换了个长相（见 docs/emoji-wechat-map.md）。
+   * 只有语义几乎等同的 8 个词换成微信名，其余仍用 Unicode emoji；
+   * 认不出的词也不吞——用全角圆括号标出来，微信里读作「（摸摸头）」式的旁白。
+   */
   #markerResolver() {
     if (this.#cfg?.emojiReplace === false) return () => '';
     const overrides = this.#cfg?.emojiOverrides;
-    return (word) => resolveEmoji(word, overrides);
+    return (word) => {
+      const wechat = resolveWeChatEmoji(word);
+      if (wechat) return `[${wechat}]`;
+      const emoji = resolveEmoji(word, overrides);
+      if (emoji) return emoji;
+      // 动作词本来就是给气泡用的，微信里没有对应表现，静默丢掉；
+      // 表情词（如 `平静`）和陌生词留下痕迹，别悄悄吞。
+      if (isMotionOnly(word)) return '';
+      const plain = String(word ?? '').trim();
+      return plain ? `（${plain}）` : '';
+    };
+  }
+
+  /** 微信名 ↔ 内部名的两向表，按配置现算（别名表可热改）。 */
+  #aliasTables() {
+    return buildAliasTables(resolveAliases(this.#cfg?.emojiAliases));
+  }
+
+  /** 判断一个 `[词]` 是不是微信真认识的表情名；不认识的转圆括号。 */
+  #isWeChatEmoji() {
+    return createWeChatEmojiJudge(resolveAliases(this.#cfg?.emojiAliases), WECHAT_EMOJI_WORDS);
   }
 
   #toolStatus() {
@@ -673,6 +736,10 @@ export class ClawbotWorld {
   }
 
   #invokePanel(panel, method, args) {
+    if (panel === 'emotes') {
+      if (method === 'list') return { ...resolveAliases(this.#cfg?.emojiAliases) };
+      throw new Error(`unknown method: ${panel}.${method}`);
+    }
     if (panel === 'media') {
       if (method === 'list') return listRecentMedia(join(this.#dataDir, DATA_ID, 'blobs'));
       throw new Error(`unknown method: ${panel}.${method}`);
@@ -985,6 +1052,11 @@ export class ClawbotWorld {
         title: t.panelMediaTitle,
         description: t.panelMediaDesc,
         getMethods: ['list'],
+      }, {
+        id: 'emotes',
+        title: t.panelEmoteTitle,
+        description: t.panelEmoteDesc,
+        getMethods: ['list'],
       }],
       invoke: (panel, method, args) => this.#invokePanel(panel, method, args ?? []),
       config: [configGroup(language)],
@@ -1154,7 +1226,7 @@ export class ClawbotWorld {
       type: EVENT_MESSAGE,
       ts: this.#lastMessageAt,
       source: ID,
-      text: renderMessage(message, this.#timezone, attachments),
+      text: this.#toInnerText(renderMessage(message, this.#timezone, attachments)),
       senderKey: from,
       ...(blobs.length ? { blobs } : {}),
       meta: {
