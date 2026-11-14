@@ -133,16 +133,24 @@ export function createWeChatEmojiJudge(aliases, builtinWeChatNames) {
     const value = String(name ?? '').trim();
     if (value) known.add(value);
   }
+  /** 别名表里「内部名」那一侧：桌宠嘴里说的词，插件能翻成微信名，所以它也算认得的。 */
+  const inner = new Set();
   if (aliases && typeof aliases === 'object') {
     for (const rawKey of Object.keys(aliases)) {
       const m = ALIAS_KEY_RE.exec(normalize(rawKey));
       if (m && m[1]) known.add(m[1]);
+      // 值那一侧是内部名。**必须也认**：`envPromptVars()` 把内部名写进
+      // 「你可以用这些」的清单里，桌宠照着说 `[笑哭了]`，
+      // 这里要是判不认识就会被转成 `（笑哭了）`——清单和判断又脱节。
+      const v = String(aliases[rawKey] ?? '').replace(/^\[|\]$/g, '').trim();
+      if (v) inner.add(v);
     }
   }
   return (word) => {
     const key = String(word ?? '').trim();
     if (!key) return false;
     if (known.has(key)) return true;
+    if (inner.has(key)) return true;
     return isWeChatBuiltinEmote(key);
   };
 }
