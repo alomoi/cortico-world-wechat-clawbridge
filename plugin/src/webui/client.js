@@ -49,8 +49,15 @@ const ZH = {
   mediaSending: '（发送时用的是原图）',
   mediaTitle: '收到的图片',
   mediaDesc: '微信发来的图片，按时间倒序；缩略图只用于查看，发出去的是原图。',
-  emoteTitle: '表情别名',
-  emoteDesc: '左边是微信那边的名字，右边是桌宠内部的名字。她发「内部名」会换成「微信名」离开；收到「微信名」会换成「内部名」给她看。两列都要带方括号。',
+  emoteTitle: '微信表情',
+  emoteDesc: '把她的表情换成微信原生表情，并在两边之间翻译名字。'
+    + '打开时：她写「害羞」发出去就是微信的[害羞]，你发来的[破涕为笑]她会读到「笑哭了」；'
+    + '她写的名字微信没有，会退成圆括号旁白，比如「（歪头看鱼）」，内容不丢。'
+    + '关掉时：一切按原来的 Unicode 表情走，不翻译。',
+  emoteOn: '启用微信表情转换',
+  emoteOnTitle: '关掉后她的表情恢复成 😳 这样的 Unicode 符号，别名表也不再起作用。',
+  emoteHow: '怎么用：下表和开关一起保存。左边填微信里的名字，右边填她内部用的名字，两列都要带方括号。'
+    + '例如 [破涕为笑] → [笑哭了]：她写[笑哭了]发出去就是[破涕为笑]，你发[破涕为笑]她收到[笑哭了]。',
   emoteWechat: '微信名',
   emoteInner: '内部名',
   emoteAdd: '添加一行',
@@ -110,8 +117,15 @@ const EN = {
   mediaSending: '(sending uses the original)',
   mediaTitle: 'Received images',
   mediaDesc: 'Images received from WeChat, newest first. Thumbnails are for viewing only; sending uses the original.',
-  emoteTitle: 'Emoji aliases',
-  emoteDesc: 'Left is the WeChat name, right is the pet\'s internal name. When she writes the internal name it leaves as the WeChat name; when the WeChat name arrives it is translated to the internal name for her. Both columns need the brackets.',
+  emoteTitle: 'WeChat emotes',
+  emoteDesc: 'Turn her expressions into native WeChat emotes and translate names both ways. '
+    + 'On: her "shy" leaves as [害羞], and an incoming [破涕为笑] reads to her as "笑哭了". '
+    + 'A name WeChat does not have falls back to a parenthetical aside, e.g. (歪头看鱼), so nothing is lost. '
+    + 'Off: everything stays Unicode, no translation.',
+  emoteOn: 'Enable WeChat emote translation',
+  emoteOnTitle: 'When off, her expressions go back to Unicode symbols like 😳 and the alias table is ignored.',
+  emoteHow: 'How: the table and the switch are saved together. Left is the WeChat name, right is the name she uses internally; both need the brackets. '
+    + 'Example [破涕为笑] → [笑哭了]: when she writes [笑哭了] it leaves as [破涕为笑], and when you send [破涕为笑] she reads [笑哭了].',
   emoteWechat: 'WeChat name',
   emoteInner: 'Internal name',
   emoteAdd: 'Add a row',
@@ -386,6 +400,16 @@ export default {
         const S = zh ? ZH : EN;
 
         const card = ui.sheet({ title: S.emoteTitle, desc: S.emoteDesc });
+
+        // 总开关和别名表放同一张卡：它们是一件事，分开放会让人以为互不相干。
+        // 真正的持久化交给 webui 的 ctx.setConfig（见 save），这里的 invoke('save')
+        // 只让服务端这次运行立刻换上新值。
+        const toggle = ui.checkbox(S.emoteOn, { title: S.emoteOnTitle, checked: true });
+        const how = ui.h('div');
+        how.style.fontSize = '12px';
+        how.style.opacity = '.72';
+        how.textContent = S.emoteHow;
+
         const rows = ui.h('div');
         rows.style.display = 'flex';
         rows.style.flexDirection = 'column';
@@ -401,13 +425,15 @@ export default {
         hint.style.opacity = '.62';
         hint.textContent = S.emoteHint;
 
-        card.body.append(rows, hint, bar, message);
+        card.body.append(toggle.el, how, rows, hint, bar, message);
         root.append(card.el);
 
         /** 改了没存的提示：按钮上点出来就够了，不用额外状态机。 */
         const markDirty = () => {
           saveButton.disabled = false;
         };
+
+        toggle.input.addEventListener('change', markDirty);
 
         /** 收一行：[微信名] → [内部名]。两边不带方括号时自动补上，省得她手打。 */
         function normalizeName(value) {
@@ -464,9 +490,19 @@ export default {
           message.classList.remove('bad');
           try {
             const aliases = collect();
-            // 走框架配置面写回：校验、热更新、持久化都由宿主负责，
+            const wechatEmoji = toggle.checked;
+            // 框架配置面写回：校验、持久化、热更新都由宿主负责；
             // 不用自己改 config.json，也不用重启。
-            await ctx.setConfig(`world:${WORLD_ID}`, { [`worlds.${WORLD_ID}.emojiAliases`]: aliases });
+            await ctx.setConfig(`world:${WORLD_ID}`, {
+              [`worlds.${WORLD_ID}.emojiAliases`]: aliases,
+              [`worlds.${WORLD_ID}.wechatEmoji`]: wechatEmoji,
+            });
+            // 再通知服务端：配置热更新有时要等下一轮，这里让它立刻换。
+            try {
+              await ctx.invoke('save', { aliases, wechatEmoji });
+            } catch {
+              // 内存更新失败不影响已落盘的配置，下一轮照样生效。
+            }
             message.textContent = S.emoteSaved;
           } catch (error) {
             message.textContent = `${S.emoteBad}: ${String(error?.message ?? error)}`;
@@ -480,7 +516,10 @@ export default {
           message.classList.remove('bad');
           message.textContent = S.loading;
           try {
-            const aliases = await ctx.invoke('list');
+            const state = await ctx.invoke('list');
+            const aliases = state && typeof state === 'object' && !Array.isArray(state)
+              && !('aliases' in state) ? state : state?.aliases;
+            toggle.setChecked(state?.wechatEmoji !== false);
             rows.replaceChildren();
             const entries = Object.entries(aliases && typeof aliases === 'object' ? aliases : {});
             for (const [wechat, inner] of entries) appendRow(wechat, String(inner ?? ''));
@@ -490,6 +529,7 @@ export default {
               empty.textContent = S.emoteEmpty;
               rows.append(empty);
             }
+            saveButton.disabled = true;
             message.textContent = '';
           } catch (error) {
             message.textContent = `${S.emoteBad}: ${String(error)}`;

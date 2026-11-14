@@ -757,7 +757,31 @@ export class ClawbotWorld {
 
   #invokePanel(panel, method, args) {
     if (panel === 'emotes') {
-      if (method === 'list') return { ...resolveAliases(this.#cfg?.emojiAliases) };
+      if (method === 'list') {
+        return {
+          aliases: { ...resolveAliases(this.#cfg?.emojiAliases) },
+          wechatEmoji: this.#wechatEmojiEnabled(),
+        };
+      }
+      if (method === 'save') {
+        const payload = args?.[0] && typeof args[0] === 'object' ? args[0] : {};
+        const patch = {};
+        if (payload.aliases && typeof payload.aliases === 'object' && !Array.isArray(payload.aliases)) {
+          const clean = {};
+          for (const [rawKey, rawValue] of Object.entries(payload.aliases)) {
+            const key = String(rawKey ?? '').trim();
+            const value = String(rawValue ?? '').trim();
+            if (key && value) clean[key] = value;
+          }
+          patch.emojiAliases = clean;
+        }
+        if (typeof payload.wechatEmoji === 'boolean') patch.wechatEmoji = payload.wechatEmoji;
+        if (Object.keys(patch).length === 0) throw new Error('没有要保存的内容');
+        // 只改内存：她下一条消息立刻用新表。宿主没有给 World 暴露写配置的接口
+        // （WorldHost 里没有 setConfig），持久化只能交给 WebUI 的 ctx.setConfig。
+        this.#cfg = { ...(this.#cfg ?? {}), ...patch };
+        return { ok: true };
+      }
       throw new Error(`unknown method: ${panel}.${method}`);
     }
     if (panel === 'media') {
@@ -1076,7 +1100,7 @@ export class ClawbotWorld {
         id: 'emotes',
         title: t.panelEmoteTitle,
         description: t.panelEmoteDesc,
-        getMethods: ['list'],
+        getMethods: ['list', 'save'],
       }],
       invoke: (panel, method, args) => this.#invokePanel(panel, method, args ?? []),
       config: [configGroup(language)],
