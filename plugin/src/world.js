@@ -644,17 +644,26 @@ export class ClawbotWorld {
     const overrides = this.#cfg?.emojiOverrides;
     const wechatNative = this.#wechatEmojiEnabled();
     return (word) => {
-      // 总开关关掉时退回 1.7.4 的老办法：一律 Unicode emoji，两端都看得见。
-      if (wechatNative) {
+      // 微信真有的表情名排在第二顺位：Coopanion 的 8 个可映射词（语义几乎等同，
+      // 见 docs/emoji-wechat-map.md）优先，其余的像 `爱心`、`旺柴` 微信本来就会画，
+      // 不该被 Unicode emoji（😍）抢走——那是 1.7.4 的老办法，观感反而更差。
+      const plain = String(word ?? '').trim();
+      if (wechatNative && plain) {
         const wechat = resolveWeChatEmoji(word);
         if (wechat) return `[${wechat}]`;
       }
       const emoji = resolveEmoji(word, overrides);
-      if (emoji) return emoji;
+      if (emoji) {
+        // Unicode 兜底只在没有对应微信表情时用；有微信表情就走上面那条
+        if (!(wechatNative && plain && this.#isWeChatEmoji()(plain))) return emoji;
+      }
+      // 微信真有的表情名：原样发，微信自己画图。
+      // 别名表是「换名」不是「降级」——`[破涕为笑]` 本来就能正常显示，
+      // 不该因为它不在桌宠的 19 词表里就被贬成旁白（2026-11-14 真机发现）。
+      if (wechatNative && plain && this.#isWeChatEmoji()(plain)) return `[${plain}]`;
       // 动作词本来就是给气泡用的，微信里没有对应表现，静默丢掉；
       // 表情词（如 `平静`）和陌生词留下痕迹，别悄悄吞。
       if (isMotionOnly(word)) return '';
-      const plain = String(word ?? '').trim();
       return plain ? `（${plain}）` : '';
     };
   }
