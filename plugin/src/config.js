@@ -102,7 +102,7 @@ const ZH = {
   panelMediaTitle: '收到的图片',
   panelMediaDesc: '微信发来的图片（已解密落盘），按时间倒序；缩略图仅用于查看，发出去的是原图。',
   panelEmoteTitle: '微信表情',
-  panelEmoteDesc: '把她的表情换成微信原生表情，并在两端之间翻译名字。下面的开关和别名表都在「微信表情」面板里调。',
+  panelEmoteDesc: '把 ta 的表情换成微信原生表情，并在两端之间翻译名字。下面的开关和别名表都在「微信表情」面板里调。',
   promptTitle: '提示词',
   badgeAccount: '账号',
   badgeLast: '最近消息',
@@ -130,10 +130,6 @@ const ZH = {
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
     emojiReplaceDesc: '把【shy】这类表情标记换成 😳 这样的微信 emoji；动作标记始终只当分段符。关掉后所有标记都只分段。修改后需重启。',
-    emojiAliases: '表情别名表（在「微信表情」面板里改）',
-    emojiAliasesDesc: '微信名 ↔ 桌宠内部名的双向翻译，例如 {"[破涕为笑]": "[笑哭了]"}：收进来换成内部名，发出去换回微信名。请到「微信表情」面板里增删，直接改这里会显示成 null。',
-    wechatEmoji: '用微信原生表情',
-    wechatEmojiDesc: '打开后【害羞】发成 [害羞]，手机微信会画成表情图（电脑版微信只显示方括号里的字）。关掉后回到 😳 这样的 emoji，两端都显示得出来。修改后需重启。',
     maxImages: '单次最多几张图',
     maxImagesDesc: '一次回复里最多附带几张图片，默认 2，上限 4。图片在文字之后按顺序发出。修改后需重启。',
     typingIndicator: '显示「正在输入」',
@@ -145,7 +141,7 @@ const ZH = {
     mediaRetentionDays: '图片保留天数',
     mediaRetentionDaysDesc: '启动时删除超过这个天数的图片与媒体凭证（blobs 和 media 目录），默认 7；填 0 不清理。修改后需重启。',
     fileTransfer: '收发文件',
-    fileTransferDesc: '打开后才能收发文件。收到的文件落在 <数据目录>/clawbot/blobs，按上面的图片保留天数清理；她只能发自己 workspace 里的文件。默认关闭。修改后需重启。',
+    fileTransferDesc: '打开后才能收发文件。收到的文件落在 <数据目录>/clawbot/blobs，按上面的图片保留天数清理；桌宠只能发自己 workspace 里的文件。默认关闭。修改后需重启。',
     maxFiles: '单次最多几个文件',
     maxFilesDesc: '一次回复里最多附带几个文件，默认 2，上限 4。文件在文字与图片之后按顺序发出。修改后需重启。',
     maxFileMb: '单件文件/视频上限（MB）',
@@ -199,10 +195,6 @@ const EN = {
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',
     emojiReplaceDesc: 'Replace expression markers like 【shy】 with WeChat emoji such as 😳. Motion markers always act as plain separators. When off, every marker only splits. Restart after changing.',
-    emojiAliases: 'Emoji aliases (edit in the WeChat emotes panel)',
-    emojiAliasesDesc: 'Two-way translation between WeChat names and the pet\'s internal names, e.g. {"[破涕为笑]": "[笑哭了]"}: inbound messages are translated to internal names, outbound messages back to WeChat names. Edit them in the "WeChat emotes" panel; editing here shows null.',
-    wechatEmoji: 'Use native WeChat emotes',
-    wechatEmojiDesc: 'When on, 【害羞】 goes out as [害羞] and the phone app draws a WeChat sticker (desktop WeChat shows the bracketed text instead). When off, it falls back to emoji like 😳 that render on both. Restart after changing.',
     maxImages: 'Max images per reply',
     maxImagesDesc: 'How many images one reply may attach, default 2, max 4. Images go out after the text in order. Restart after changing.',
     typingIndicator: 'Show typing indicator',
@@ -301,22 +293,9 @@ export function configGroup(language = 'zh') {
           description: t.emojiReplaceDesc,
           'x-hot': false,
         },
-        [`${K}.emojiAliases`]: {
-          type: 'object',
-          title: t.emojiAliases,
-          description: t.emojiAliasesDesc,
-          additionalProperties: { type: 'string' },
-          // 默认值交给 schema 合并：面板删到空时只剩 `{}`，
-          // 不能因为缺键就退回 DEFAULTS，否则用户删不干净。
-          default: { '[破涕为笑]': '[笑哭了]' },
-          'x-hot': true,
-        },
-        [`${K}.wechatEmoji`]: {
-          type: 'boolean',
-          title: t.wechatEmoji,
-          description: t.wechatEmojiDesc,
-          'x-hot': false,
-        },
+        // 这张表不在设置栏里出现：WebUI 只把 object 类型当只读展示，一律渲染成
+        // null，放这儿只会让人以为它坏了。增删入口在「微信表情」面板里，
+        // 默认值由 DEFAULTS 兜底，写 config.json 的人也照样能改这个键。
         [`${K}.maxImages`]: {
           type: 'integer',
           title: t.maxImages,

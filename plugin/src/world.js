@@ -1109,6 +1109,12 @@ export class ClawbotWorld {
         title: t.promptTitle,
         path: ENV_PROMPT,
         role: 'envPrompt',
+        // 声明了才不会在「提示词」页报「占位符未提供值」。宿主按名字把
+        // envPromptVars() 的返回值填进这里（bot.ts 的 readDoc），值本身由插件现算。
+        vars: [{
+          name: 'clawbridge.emotes',
+          description: '微信表情清单：8 个内置中文名 + 别名表里的内部名，随配置实时变化。',
+        }],
       }],
     };
   }
