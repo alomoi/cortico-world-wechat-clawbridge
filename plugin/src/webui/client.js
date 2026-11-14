@@ -2,7 +2,7 @@
  * 控制台「微信绑定」面板（浏览器侧 ES 模块）。
  *
  * 只使用 ctx.ui 和 ctx.invoke；服务端方法见 world.js 的 #invokePanel。
- * 表情别名表走 ctx.setConfig 写回框架配置面。
+ * 表情别名表由面板的 invoke('save') 写进插件数据目录，不进框架配置面。
  * 二维码由服务端生成 data URL，这里只负责显示。
  */
 
@@ -402,8 +402,8 @@ export default {
         const card = ui.sheet({ title: S.emoteTitle, desc: S.emoteDesc });
 
         // 总开关和别名表放同一张卡：它们是一件事，分开放会让人以为互不相干。
-        // 真正的持久化交给 webui 的 ctx.setConfig（见 save），这里的 invoke('save')
-        // 只让服务端这次运行立刻换上新值。
+        // 保存走面板自己的 invoke('save')：别名表写进插件数据目录，开关改内存。
+        // 设置栏里那一项是只读展示，改不动，所以增删入口只有这里。
         const toggle = ui.checkbox(S.emoteOn, { title: S.emoteOnTitle, checked: true });
         const how = ui.h('div');
         how.style.fontSize = '12px';
@@ -491,18 +491,10 @@ export default {
           try {
             const aliases = collect();
             const wechatEmoji = toggle.checked;
-            // 别名表存成 JSON 文本：框架的配置面只认 schema 里声明过的标量类型，
-            // 对象不是合法值（会被当未知键拒掉），而纯字符串两栏都能编辑。
-            await ctx.setConfig(`world:${WORLD_ID}`, {
-              [`worlds.${WORLD_ID}.emojiAliases`]: JSON.stringify(aliases),
-              [`worlds.${WORLD_ID}.wechatEmoji`]: wechatEmoji,
-            });
-            // 再通知服务端：配置热更新有时要等下一轮，这里让它立刻换。
-            try {
-              await ctx.invoke('save', [{ aliases, wechatEmoji }]);
-            } catch {
-              // 内存更新失败不影响已落盘的配置，下一轮照样生效。
-            }
+            // 只走面板自己的 save：别名表落到插件数据目录
+            // （<dataDir>/clawbot/emoji-aliases.json），开关改内存。
+            // 不再写框架配置面——设置栏里那一项是只读展示，写不进去。
+            await ctx.invoke('save', [{ aliases, wechatEmoji }]);
             message.textContent = S.emoteSaved;
           } catch (error) {
             message.textContent = `${S.emoteBad}: ${String(error?.message ?? error)}`;

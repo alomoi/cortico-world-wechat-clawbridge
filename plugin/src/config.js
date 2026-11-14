@@ -130,8 +130,8 @@ const ZH = {
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
     emojiReplaceDesc: '把【shy】这类表情标记换成 😳 这样的微信 emoji；动作标记始终只当分段符。关掉后所有标记都只分段。修改后需重启。',
-    emojiAliases: '表情别名（JSON）',
-    emojiAliasesDesc: '微信原生表情和桌宠内部名字的双向对照，例如 {"[破涕为笑]": "[笑哭了]"}：左边是微信里的名字，右边是 ta 内部用的名字，两边都带方括号。一般不用手改——「微信表情」面板里有开关和一张能增删的表，改完会自动写回这里。',
+    emojiAliases: '表情别名（只读）',
+    emojiAliasesDesc: '这一项在设置栏里只是给写配置的人看的，改不动也不用改——请到「微信表情」面板里增删。左边是微信里的表情名，右边是 ta 内部用的名字，两边都带方括号，例如 {"[破涕为笑]": "[笑哭了]"}。',
     maxImages: '单次最多几张图',
     maxImagesDesc: '一次回复里最多附带几张图片，默认 2，上限 4。图片在文字之后按顺序发出。修改后需重启。',
     typingIndicator: '显示「正在输入」',
@@ -197,8 +197,8 @@ const EN = {
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',
     emojiReplaceDesc: 'Replace expression markers like 【shy】 with WeChat emoji such as 😳. Motion markers always act as plain separators. When off, every marker only splits. Restart after changing.',
-    emojiAliases: 'Emoji aliases (JSON)',
-    emojiAliasesDesc: 'Two-way map between native WeChat emote names and the pet\'s internal names, e.g. {"[破涕为笑]": "[笑哭了]"}: left is the WeChat name, right is the name the pet uses internally, brackets on both sides. You usually do not edit this by hand — the "WeChat emotes" panel has the switch and an editable table and writes back here.',
+    emojiAliases: 'Emoji aliases (read-only)',
+    emojiAliasesDesc: 'Shown here only for people editing the config by hand; it cannot be edited and does not need to be. Add or remove entries in the "WeChat emotes" panel. Left is the WeChat emote name, right is the name the pet uses internally, brackets on both sides, e.g. {"[破涕为笑]": "[笑哭了]"}.',
     maxImages: 'Max images per reply',
     maxImagesDesc: 'How many images one reply may attach, default 2, max 4. Images go out after the text in order. Restart after changing.',
     typingIndicator: 'Show typing indicator',
@@ -297,25 +297,27 @@ export function configGroup(language = 'zh') {
           description: t.emojiReplaceDesc,
           'x-hot': false,
         },
-        // 这张表不在设置栏里出现：WebUI 只把 object 类型当只读展示，一律渲染成
-        // null，放这儿只会让人以为它坏了。增删入口在「微信表情」面板里，
-        // 默认值由 DEFAULTS 兜底，写 config.json 的人也照样能改这个键。
         [`${K}.maxImages`]: {
           type: 'integer',
           title: t.maxImages,
           description: t.maxImagesDesc,
           'x-hot': false,
         },
-        // 别名表在设置栏里显示成一行 JSON 文本，不是一个对象：
-        // WebUI 把 object 类型当只读、一渲染就是 null（用户看到的就是个坏掉的项），
-        // 而 `coerceGroupValues` 只接受 schema 里声明过的键——把这张表从 schema
-        // 撤掉，面板的 ctx.setConfig 就会因「未知键」直接报错。
-        // 存成字符串两头都顺：设置栏能看能改，面板也能写回来，默认值仍是 DEFAULTS 里的对象。
+        // 别名表在这一栏里只是一行只读文字，增删入口只在「微信表情」面板。
+        //
+        // 为什么还留在 schema 里：`coerceGroupValues` 会把未声明的键当成「未知键」拒绝，
+        // 所以「从 schema 里删掉」等于连带废掉面板的写入通道（2026-11-14 保存报错的根因）。
+        //
+        // 为什么是 object 而不是 string：`configField` 对不认识的类型走只读展示
+        // （`{ node: tdesc, read: null, write: null }`），`coerceGroupValues` 对它的
+        // 注释是「未支持的类型只读，不写回」，两头都不会给它画成输入框。
+        // `nullable: true` 让它没值的时候显示空白而不是 `0`。
+        // 真正的表存在 `<dataDir>/clawbot/emoji-aliases.json`，由面板写、由插件自己读。
         [`${K}.emojiAliases`]: {
-          type: 'string',
+          type: 'object',
           title: t.emojiAliases,
           description: t.emojiAliasesDesc,
-          default: JSON.stringify(DEFAULTS.emojiAliases),
+          nullable: true,
           'x-hot': true,
         },
         [`${K}.typingIndicator`]: {

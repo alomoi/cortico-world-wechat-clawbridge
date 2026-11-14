@@ -162,6 +162,8 @@ export const CLAWBOT_TOOL_DECLS = [
 export class ClawbotWorld {
   #cfg;
   #dataDir;
+  /** 盘上的别名表（`<dataDir>/clawbot/emoji-aliases.json` 的内容），启动时读一次。 */
+  #aliasesFromDisk = null;
   #timezone;
   #fetchOverride;
   #fetchImpl;
@@ -668,25 +670,62 @@ export class ClawbotWorld {
     };
   }
 
+  /** 别名表的落盘位置：插件自己的数据目录，不走宿主配置面。 */
+  #aliasesPath() {
+    return join(this.#dataDir, DATA_ID, 'emoji-aliases.json');
+  }
+
   /**
-   * 读出别名表。
+   * 读出别名表，优先级从高到低：
    *
-   * 配置里它可能是三样东西：`DEFAULTS` 的对象、设置栏里那行 JSON 字符串
-   * （`coerceGroupValues` 只认 string，写回来就是字符串）、或者面板当场写内存的对象。
-   * 解析失败的字符串一律当「没配」，回落到默认表而不是清空——手抖少个括号不该让翻译全消失。
+   * 1. `<dataDir>/clawbot/emoji-aliases.json`——「微信表情」面板写的就是它，主人点保存立刻生效；
+   * 2. `cfg.emojiAliases`——手改 `config.json` 的老办法，或者面板写内存后的那份（对象或 JSON 字符串都认）；
+   * 3. `DEFAULTS.emojiAliases`。
+   *
+   * 哪一层坏了都只是跳过，不回落到空表：手抖少个括号不该让翻译全消失。
    */
   #readAliases() {
+    const fromDisk = this.#aliasesFromDisk;
+    if (fromDisk && typeof fromDisk === 'object' && !Array.isArray(fromDisk)) return fromDisk;
     const raw = this.#cfg?.emojiAliases;
     if (typeof raw === 'string') {
       try {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
       } catch {
-        this.#host?.log?.warn?.('clawbot: 表情别名不是合法的 JSON，先用默认表', { raw: raw.slice(0, 120) });
+        this.#host?.log?.warn?.('clawbot: 表情别名不是合法的 JSON，先看别处', { raw: raw.slice(0, 120) });
       }
-      return resolveAliases(undefined);
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw;
     }
-    return resolveAliases(raw);
+    // 磁盘那份只在启动时读一次（见 #loadAliases），这里缓存住，免得每条消息都碰磁盘。
+    return this.#aliasesFromDisk ?? resolveAliases(undefined);
+  }
+
+  /** 启动时把盘上的别名表读进内存；文件不存在或坏了都当没有。 */
+  async #loadAliases() {
+    try {
+      const text = await readFile(this.#aliasesPath(), 'utf8');
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        this.#aliasesFromDisk = parsed;
+        return;
+      }
+      this.#host?.log?.warn?.('clawbot: 表情别名文件不是对象，忽略', { path: this.#aliasesPath() });
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        this.#host?.log?.warn?.('clawbot: 表情别名文件读不了，先用别处的', { error: msgOf(err) });
+      }
+    }
+    this.#aliasesFromDisk = null;
+  }
+
+  /** 把别名表写回插件自己的数据文件，并立刻替换内存里那份。 */
+  async #writeAliases(aliases) {
+    const target = this.#aliasesPath();
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, `${JSON.stringify(aliases, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    this.#aliasesFromDisk = aliases;
   }
 
   /** 微信名 ↔ 内部名的两向表，按配置现算（别名表可热改）。 */
@@ -776,7 +815,7 @@ export class ClawbotWorld {
     };
   }
 
-  #invokePanel(panel, method, args) {
+  async #invokePanel(panel, method, args) {
     if (panel === 'emotes') {
       if (method === 'list') {
         return {
@@ -786,22 +825,23 @@ export class ClawbotWorld {
       }
       if (method === 'save') {
         const payload = args?.[0] && typeof args[0] === 'object' ? args[0] : {};
-        const patch = {};
-        if (payload.aliases && typeof payload.aliases === 'object' && !Array.isArray(payload.aliases)) {
+        const hasAliases = payload.aliases && typeof payload.aliases === 'object' && !Array.isArray(payload.aliases);
+        const hasSwitch = typeof payload.wechatEmoji === 'boolean';
+        if (!hasAliases && !hasSwitch) throw new Error('没有要保存的内容');
+        // 别名表落到插件自己的数据文件里，不走宿主配置面：
+        // 那一栏里的 emojiAliases 是只读展示，建不了写入通道。
+        if (hasAliases) {
           const clean = {};
           for (const [rawKey, rawValue] of Object.entries(payload.aliases)) {
             const key = String(rawKey ?? '').trim();
             const value = String(rawValue ?? '').trim();
             if (key && value) clean[key] = value;
           }
-          patch.emojiAliases = clean;
+          await this.#writeAliases(clean);
         }
-        if (typeof payload.wechatEmoji === 'boolean') patch.wechatEmoji = payload.wechatEmoji;
-        if (Object.keys(patch).length === 0) throw new Error('没有要保存的内容');
-        // 只改内存：桌宠下一条消息立刻用新表。宿主没有给 World 暴露写配置的接口
-        // （WorldHost 里没有 setConfig），持久化只能交给 WebUI 的 ctx.setConfig。
-        this.#cfg = { ...(this.#cfg ?? {}), ...patch };
-        return { ok: true };
+        // 开关没有落盘位置（schema 里也没有它），只改内存，重启回到默认开。
+        if (hasSwitch) this.#cfg = { ...(this.#cfg ?? {}), wechatEmoji: payload.wechatEmoji };
+        return { ok: true, aliases: { ...this.#readAliases() } };
       }
       throw new Error(`unknown method: ${panel}.${method}`);
     }
@@ -1144,6 +1184,9 @@ export class ClawbotWorld {
     if (this.#started) return;
     this.#host = host;
     this.#startedAt = nowIso();
+
+    // 别名表在盘上（面板写的），启动时读一次进内存
+    await this.#loadAliases();
 
     // 表情包素材目录：建好让用户直接往里丢图
     try {
