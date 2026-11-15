@@ -51,7 +51,7 @@ Coopanion → 切到这个 World → 打开「**微信绑定**」面板 → 点�
 ```
 
 默认路径示例：
-`C:\Users\<你>\AppData\Local\Programs\Coopanion\data\home\companion\data\clawbot\stickers\`
+`<Coopanion>\data\home\companion\data\clawbot\stickers\`
 
 操作：
 

@@ -35,9 +35,9 @@ export const clawbotDefinition = {
   label: LABEL,
   defaults: () => structuredClone(DEFAULTS),
   preflight: () => {
-    if (typeof fetch !== 'function') throw new Error('微信小龙虾需要 Node 22+ 的 fetch。');
+    if (typeof fetch !== 'function') throw new Error('微信 ClawBridge 需要 Node 22+ 的 fetch。');
     if (typeof structuredClone !== 'function') {
-      throw new Error('微信小龙虾需要 Node 22+ 的 structuredClone。');
+      throw new Error('微信 ClawBridge 需要 Node 22+ 的 structuredClone。');
     }
   },
   create: (ctx) => new ClawbotWorld({
