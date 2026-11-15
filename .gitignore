@@ -23,3 +23,6 @@ Thumbs.db
 .DS_Store
 .idea/
 .vscode/
+
+# 私人备份（不外发）
+backup-*/

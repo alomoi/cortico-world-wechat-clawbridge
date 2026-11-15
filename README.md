@@ -43,7 +43,8 @@ pnpm add cortico-world-wechat-clawbridge
 | 语音 → 文字 | 用微信转写结果，直接进模型 |
 | 图片 → 模型 | 下载、AES-128-ECB 解密、落盘，再作为附件送进模型 |
 | 自动分条 | `【…】` 把一条回复切成多条，段间带节奏间隔 |
-| 表情替换 | `【害羞】` → 😳；`<wink>` 就地替换，不拆条 |
+| 微信表情 | 她直接写微信表情名（`[破涕为笑]`、`[旺柴]`），手机端画成表情图；你发过去的她也能读懂 |
+| 表情别名 | 控制台「微信表情」面板里可以自定义对应关系，例如让 `[狗头]` 发出去变成 `[旺柴]` |
 | 发图 | 上下文句柄、本地路径、`sticker:名字` 三种来源 |
 | 图片表情包 | 素材目录里放图即用，参数不写扩展名也自动匹配 |
 | 收发文件 | **默认关闭**。打开后：你发的文件与视频她会存下来（文件带原名，视频按容器命名、带时长）；她只能发自己 workspace 里的文件。视频按文件给，怎么读由她决定 |
@@ -92,7 +93,21 @@ pnpm add cortico-world-wechat-clawbridge
 她在需要时自动使用，你也可以在对话里要求：
 
 - “分两句说” → 她会用 `【…】` 拆成两条微信消息
-- 表情写在标记里：`【害羞】` → 😳；行内 `<wink>` 不拆条就地替换
+- 表情直接用微信表情名：`[破涕为笑]`、`[旺柴]`、`[害羞]`，手机端会画成表情图
+
+### 微信表情面板
+
+控制台里有一张「微信表情」卡片，三件事都在这里：
+
+- **总开关**：关掉就完全退回 Unicode emoji（😳😄），不碰方括号
+- **别名表**：左边填她想写的内部名，右边填微信里真有的名字。例如 `[狗头]` → `[旺柴]`，
+  她写 `[狗头]` 发出去就是 `[旺柴]`；你发 `[旺柴]`，她读到的是 `[狗头]`。两个方向各查各的表
+- **用法说明**：卡片顶部写着开与关分别是什么效果
+
+改完点保存，下一句回复就生效，不用重启。表存在
+`data\clawbot\emoji-aliases.json`，删掉这个文件就回到默认表。
+
+她自编的词（`[歪头看鱼]`）不会报错，会退成全角圆括号 `（歪头看鱼）`，读起来像旁白——内容不丢。
 
 ### 配置项（控制台可改）
 
@@ -101,6 +116,7 @@ pnpm add cortico-world-wechat-clawbridge
 | `typingIndicator` | true | 显示“对方正在输入” |
 | `maxSegments` / `segmentDelayMs` | 4 / 600 | 分条上限与间隔 |
 | `emojiReplace` | true | `【害羞】` → 😳 |
+| `wechatEmoji` | true | 微信表情名双向翻译总开关（在「微信表情」面板里调） |
 | `maxImages` | 2 | 单次最多几张图 |
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（0 关闭） |
 | `mediaRetentionDays` | 7 | 图片与凭证保留天数（0 不清理）；收下的文件同此 |
@@ -146,6 +162,7 @@ pnpm add cortico-world-wechat-clawbridge
 |---|---|
 | [docs/roadmap.md](docs/roadmap.md) | 功能规划与「已决定不做」的理由 |
 | [docs/emoji-map.md](docs/emoji-map.md) | 气泡表情 → emoji 对应表 |
+| [docs/emoji-wechat-map.md](docs/emoji-wechat-map.md) | 微信表情 ↔ 桌宠内部名的映射规格（1.7.5） |
 | [docs/stickers.md](docs/stickers.md) | 图片表情包的目录与命名规则 |
 | [docs/release.md](docs/release.md) | 离线安装包的构建与踩坑 |
 | [docs/deferred-file-transfer.md](docs/deferred-file-transfer.md) | 收发文件的搁置方案 |
