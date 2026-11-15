@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-wechat-clawbridge",
-  "version": "1.7.3",
+  "version": "1.7.5",
   "type": "module",
   "description": "把微信 ClawBot 接到 Coopanion 桌宠：收发消息、收图片、发表情包、显示正在输入。",
   "license": "MIT",
@@ -71,11 +71,11 @@
     "locales": {
       "zh": {
         "displayName": "微信 ClawBridge",
-        "description": "把微信接到桌宠身上：在微信里和她聊天，她能看图片、发表情包、显示正在输入。"
+        "description": "把微信接到桌宠身上：在微信里和 ta 聊天，ta 能看图片、发表情包、显示正在输入。"
       },
       "en": {
         "displayName": "WeChat ClawBridge",
-        "description": "Chat with your desktop pet on WeChat: she sees your photos, sends stickers, and shows a typing indicator."
+        "description": "Chat with your desktop pet on WeChat: it sees your photos, sends stickers, and shows a typing indicator."
       }
     },
     "icon": "icon.png"
