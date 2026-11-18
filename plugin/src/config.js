@@ -32,6 +32,15 @@ export const DEFAULTS = Object.freeze({
   maxMediaMb: 32,
   /** 单次回复最多拆成几条微信消息（默认 3；再多就并进最后一条、用换行分行）。 */
   maxSegments: 3,
+  /**
+   * 本轮会话已经发掉这么多条之后，就不再拆气泡（默认 6）。
+   *
+   * 微信实测：一条入境消息建立的会话最多 10 条 `sendmessage`
+   * （`SESSION_SEND_LIMIT`，官方文档没写）。剩得不多时还硬拆，
+   * 就会出现「前两条到了、后面撞墙」——一半话卡在路上，对方看着像断线。
+   * 这里提前收手，改成一条长消息、用换行分行，至少整段话能落地。
+   */
+  splitStopAt: 6,
   /** 多条消息之间的间隔（毫秒），0 表示不留间隔。 */
   segmentDelayMs: 600,
   /** 是否把【表情】替换成微信 emoji；关掉后只当分段符。 */
@@ -125,7 +134,9 @@ const ZH = {
     maxMediaMb: '单张图片上限（MB）',
     maxMediaMbDesc: '超过该大小的图片不下载（也不发），默认 32（MB）。按 MB 填，和文件上限同一个单位。修改后需重启。',
     maxSegments: '单次最多几条消息',
-    maxSegmentsDesc: '一条回复最多拆成几条微信消息（默认 3，上限 10）。超出的部分不再单独发，而是并进最后一条、用换行分行。修改后需重启。',
+    maxSegmentsDesc: '一条回复最多拆成几条微信消息（默认 3，上限 10）。超出的部分不单独发，而是并进最后一条、用换行分行。实测微信每条会话只给 10 条发信额度（官方文档没写，是本插件撞出来的），拆得越多越容易撞墙，所以不建议调大。修改后需重启。',
+    splitStopAt: '聊到第几条就不再拆',
+    splitStopAtDesc: '本轮已经发出这么多条之后，后面的回复整段合成一条（用换行分行）。默认 6 —— 微信实测每个会话最多 10 条 message，临近上限还硬拆会出现「前几条到了、后面全部发送失败」。填 10 等于几乎不启用这个兜底；填 3 则聊到第 4 条起就整段合一。修改后需重启。',
     segmentDelayMs: '消息间隔（毫秒）',
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
@@ -192,7 +203,9 @@ const EN = {
     maxMediaMb: 'Max size per image (MB)',
     maxMediaMbDesc: 'Images larger than this are not downloaded or sent. Default 32 (MB). Same MB unit as the file limit. Restart after changing.',
     maxSegments: 'Max messages per reply',
-    maxSegmentsDesc: 'How many WeChat messages one reply may split into (default 3, max 10). Anything beyond that is merged into the last message, separated by a line break. Restart after changing.',
+    maxSegmentsDesc: 'How many WeChat messages one reply may split into (default 3, max 10). Anything beyond that is merged into the last message, separated by a line break. Measured on real accounts: each conversation allows only 10 messages before the API refuses (undocumented), so larger values hit the wall sooner. Restart after changing.',
+    splitStopAt: 'Stop splitting after N messages',
+    splitStopAtDesc: 'Once this many messages have gone out in the current conversation, later replies are sent as a single message with line breaks. Default 6: WeChat allows only 10 messages per conversation (measured, undocumented), and splitting near the limit means "first few arrive, the rest fail". 10 effectively disables the fallback; 3 merges everything from the fourth message on. Restart after changing.',
     segmentDelayMs: 'Delay between messages (ms)',
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',
@@ -283,6 +296,12 @@ export function configGroup(language = 'zh') {
           type: 'integer',
           title: t.maxSegments,
           description: t.maxSegmentsDesc,
+          'x-hot': false,
+        },
+        [`${K}.splitStopAt`]: {
+          type: 'integer',
+          title: t.splitStopAt,
+          description: t.splitStopAtDesc,
           'x-hot': false,
         },
         [`${K}.segmentDelayMs`]: {

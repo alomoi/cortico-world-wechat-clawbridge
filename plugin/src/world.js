@@ -79,14 +79,13 @@ const DEFAULT_MAX_MEDIA_MB = 32;
 /** 单个文件/视频的默认上限（兆字节），与配置默认一致。 */
 const DEFAULT_MAX_FILE_MB = 100;
 /**
- * 本轮会话额度花掉这么多之后就不再拆气泡。
+ * 本轮会话额度花掉不少之后就不再拆气泡（阈值是配置项 `splitStopAt`，默认 6）。
  *
  * 微信每个会话最多 10 条（`SESSION_SEND_LIMIT`，实测值），剩得不多时还硬拆，
  * 就会出现「前两条到了、第三条撞墙」——一半话卡在路上，对方看着像断线。
  * 这时候改成一条长消息、用换行分行，至少整段话能落地。
  * 桌宠不需要知道这件事，插件自己处理。
  */
-const SPLIT_STOP_AT = 6;
 /** 撞到 `-2` 时，计数到这个数才敢下「条数上限」的结论（见 `#sendErrorText`）。 */
 const QUOTA_HINT_AT = 8;
 const nowIso = () => new Date().toISOString();
@@ -327,7 +326,8 @@ export class ClawbotWorld {
 
     // 本轮会话已经发掉几条：额度紧的时候不再拆气泡，整段一条落地
     const spent = Number(driver.sessionCount?.(to, contextToken) ?? 0);
-    const tight = spent > SPLIT_STOP_AT;
+    const splitStopAt = this.#splitStopAt();
+    const tight = spent > splitStopAt;
     const maxSegments = tight ? 1 : this.#maxSegments();
 
     const { segments, truncated } = splitScript(script, {
@@ -347,9 +347,13 @@ export class ClawbotWorld {
       else outSegments.push(...splitLongText(segment, MAX_TEXT_CHARS));
     }
     if (truncated) {
+      // 两种合并原因分开记：真超了行数，还是本轮额度快用完主动收手。
+      // 回执上不区分（也不提额度），她只需要知道发成了几条。
       this.#host?.log?.info?.(
-        'clawbridge: 超出条数上限的部分已并进最后一条（换行分行）',
-        { limit: maxSegments, tight, spent },
+        tight
+          ? 'clawbridge: 本轮已发不少，整段并成一条（换行分行）'
+          : 'clawbridge: 超出条数上限的部分已并进最后一条（换行分行）',
+        { limit: maxSegments, tight, spent, splitStopAt },
       );
     }
     if (outSegments.length > segments.length) {
@@ -476,7 +480,7 @@ export class ClawbotWorld {
       chars,
     });
     const receipt = sentReceipt({ chars, messages: sent, detail, timezone: this.#timezone });
-    return { text: truncated ? `${receipt}（超上限已合并）` : receipt };
+    return { text: receipt };
   }
 
   /** 单次最多几张图（默认 2）。 */
@@ -676,6 +680,19 @@ export class ClawbotWorld {
     const value = Number(this.#cfg?.maxSegments);
     if (!Number.isFinite(value) || value <= 0) return 3;
     return Math.min(Math.max(1, Math.floor(value)), 10);
+  }
+
+  /**
+   * 本轮发掉这么多条之后就不再拆气泡（默认 6）。
+   *
+   * 上限是微信的 10 条（`SESSION_SEND_LIMIT`），所以配置范围夹在 1–10：
+   * 大于 10 没有意义（还没到就已经撞墙），填 0 会变成「一次都不拆」，
+   * 那不是谁想要的，于是统一退回默认值。
+   */
+  #splitStopAt() {
+    const value = Number(this.#cfg?.splitStopAt);
+    if (!Number.isFinite(value) || value <= 0) return 6;
+    return Math.min(Math.floor(value), SESSION_SEND_LIMIT);
   }
 
   /**
