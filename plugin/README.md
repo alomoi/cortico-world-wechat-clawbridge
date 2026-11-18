@@ -119,7 +119,7 @@ ta 自己收到的图，可以直接让 ta"把刚才那张发回来"。
 | 键 | 默认 | 作用 |
 |---|---|---|
 | `typingIndicator` | true | 显示"对方正在输入" |
-| `maxSegments` / `segmentDelayMs` | 4 / 600 | 分条上限与间隔 |
+| `maxSegments` / `segmentDelayMs` | 3 / 600 | 分条上限与间隔（超出的并进最后一条，不丢字） |
 | `maxImages` | 2 | 单次最多几张图 |
 | `wechatEmoji` | true | 微信表情名双向翻译总开关（在「微信表情」面板里调） |
 | `mediaMaxEdge` / `mediaQuality` | 768 / 82 | 送模型的降采样（`0` 关闭） |

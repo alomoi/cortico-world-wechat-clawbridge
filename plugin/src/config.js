@@ -30,8 +30,8 @@ export const DEFAULTS = Object.freeze({
   mediaDownload: true,
   /** 单件图片上限（**兆字节**），默认 32（对齐 DeepSeek inline 限制）。 **只管图片**。 */
   maxMediaMb: 32,
-  /** 单次回复最多拆成几条微信消息。 */
-  maxSegments: 4,
+  /** 单次回复最多拆成几条微信消息（默认 3；再多就并进最后一条、用换行分行）。 */
+  maxSegments: 3,
   /** 多条消息之间的间隔（毫秒），0 表示不留间隔。 */
   segmentDelayMs: 600,
   /** 是否把【表情】替换成微信 emoji；关掉后只当分段符。 */
@@ -125,7 +125,7 @@ const ZH = {
     maxMediaMb: '单张图片上限（MB）',
     maxMediaMbDesc: '超过该大小的图片不下载（也不发），默认 32（MB）。按 MB 填，和文件上限同一个单位。修改后需重启。',
     maxSegments: '单次最多几条消息',
-    maxSegmentsDesc: '一条回复用【…】拆成多条时，最多发几条（默认 4，上限 10），超出并入最后一条。修改后需重启。',
+    maxSegmentsDesc: '一条回复最多拆成几条微信消息（默认 3，上限 10）。超出的部分不再单独发，而是并进最后一条、用换行分行。修改后需重启。',
     segmentDelayMs: '消息间隔（毫秒）',
     segmentDelayMsDesc: '多条消息之间的发送间隔，默认 600，会带 ±30% 抖动；填 0 表示不等待。修改后需重启。',
     emojiReplace: '表情替换成 emoji',
@@ -192,7 +192,7 @@ const EN = {
     maxMediaMb: 'Max size per image (MB)',
     maxMediaMbDesc: 'Images larger than this are not downloaded or sent. Default 32 (MB). Same MB unit as the file limit. Restart after changing.',
     maxSegments: 'Max messages per reply',
-    maxSegmentsDesc: 'How many WeChat messages one reply may split into via 【…】 (default 4, max 10); overflow merges into the last one. Restart after changing.',
+    maxSegmentsDesc: 'How many WeChat messages one reply may split into (default 3, max 10). Anything beyond that is merged into the last message, separated by a line break. Restart after changing.',
     segmentDelayMs: 'Delay between messages (ms)',
     segmentDelayMsDesc: 'Gap between consecutive messages, default 600 with ±30% jitter; 0 sends immediately. Restart after changing.',
     emojiReplace: 'Turn expressions into emoji',

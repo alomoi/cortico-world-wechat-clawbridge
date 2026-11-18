@@ -19,7 +19,7 @@ import {
   fetchQrCode,
   pollQrStatus,
 } from './api.js';
-import { ILinkDriver } from './driver.js';
+import { ILinkDriver, SESSION_SEND_LIMIT } from './driver.js';
 import { closeDispatcher, createDispatcher } from './network.js';
 import { ILinkStore } from './store.js';
 import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js';
@@ -27,7 +27,6 @@ import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
 import {
-  limitSegments,
   splitLongText,
   splitScript,
   bracketToParen,
@@ -79,6 +78,17 @@ const DEFAULT_EVENT_LIMIT = 10;
 const DEFAULT_MAX_MEDIA_MB = 32;
 /** 单个文件/视频的默认上限（兆字节），与配置默认一致。 */
 const DEFAULT_MAX_FILE_MB = 100;
+/**
+ * 本轮会话额度花掉这么多之后就不再拆气泡。
+ *
+ * 微信每个会话最多 10 条（`SESSION_SEND_LIMIT`，实测值），剩得不多时还硬拆，
+ * 就会出现「前两条到了、第三条撞墙」——一半话卡在路上，对方看着像断线。
+ * 这时候改成一条长消息、用换行分行，至少整段话能落地。
+ * 桌宠不需要知道这件事，插件自己处理。
+ */
+const SPLIT_STOP_AT = 6;
+/** 撞到 `-2` 时，计数到这个数才敢下「条数上限」的结论（见 `#sendErrorText`）。 */
+const QUOTA_HINT_AT = 8;
 const nowIso = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -302,28 +312,6 @@ export class ClawbotWorld {
       return { text: failedReceipt('文件收发未开启'), failed: true };
     }
 
-    const { segments, truncated } = splitScript(script, {
-      maxSegments: this.#maxSegments(),
-      resolveMarker: this.#markerResolver(),
-      isKnownMarker: isKnownWord,
-    });
-    if (segments.length === 0 && imageRefs.length === 0 && fileRefs.length === 0) {
-      return { text: failedReceipt('内容为空'), failed: true };
-    }
-
-    // 单条超长不报错，自动按段落/句子切成多条（微信上限 4000）。
-    // 注意：只切「自己太长的那一段」，不动 `【…】` 明确要求的语义分段。
-    const expanded = [];
-    for (const segment of segments) {
-      if (countChars(segment) <= MAX_TEXT_CHARS) expanded.push(segment);
-      else expanded.push(...splitLongText(segment, MAX_TEXT_CHARS));
-    }
-    const capped = limitSegments(expanded, { maxSegments: this.#maxSegments() });
-    const outSegments = capped.segments;
-    if (capped.dropped > 0) {
-      this.#host?.log?.warn?.('clawbridge: 回复超过条数上限，尾部已截断', { dropped: capped.dropped });
-    }
-
     const driver = this.#driver;
     if (!driver || !this.#auth?.token) return { text: failedReceipt('未连接'), failed: true };
 
@@ -336,6 +324,40 @@ export class ClawbotWorld {
 
     const contextToken = await this.#store.getContextToken(to);
     if (!contextToken) return { text: failedReceipt('上下文已过期'), failed: true };
+
+    // 本轮会话已经发掉几条：额度紧的时候不再拆气泡，整段一条落地
+    const spent = Number(driver.sessionCount?.(to, contextToken) ?? 0);
+    const tight = spent > SPLIT_STOP_AT;
+    const maxSegments = tight ? 1 : this.#maxSegments();
+
+    const { segments, truncated } = splitScript(script, {
+      maxSegments,
+      resolveMarker: this.#markerResolver(),
+      isKnownMarker: isKnownWord,
+    });
+    if (segments.length === 0 && imageRefs.length === 0 && fileRefs.length === 0) {
+      return { text: failedReceipt('内容为空'), failed: true };
+    }
+
+    // 单条超长不报错，自动按段落/句子切开（微信单条上限 4000 字）。
+    // 注意：只切「自己太长的那一段」，不动分条的语义。
+    const outSegments = [];
+    for (const segment of segments) {
+      if (countChars(segment) <= MAX_TEXT_CHARS) outSegments.push(segment);
+      else outSegments.push(...splitLongText(segment, MAX_TEXT_CHARS));
+    }
+    if (truncated) {
+      this.#host?.log?.info?.(
+        'clawbridge: 超出条数上限的部分已并进最后一条（换行分行）',
+        { limit: maxSegments, tight, spent },
+      );
+    }
+    if (outSegments.length > segments.length) {
+      this.#host?.log?.warn?.('clawbridge: 单条超长已自动切开', {
+        from: segments.length,
+        to: outSegments.length,
+      });
+    }
 
     // 真要发东西了，先撤掉「正在输入」
     try { await driver.stopTyping?.(to); } catch { /* 无所谓 */ }
@@ -360,7 +382,7 @@ export class ClawbotWorld {
           status: err?.status,
         });
         const where = total > 1 ? `第${sent + 1}条 ` : '';
-        return { text: failedReceipt(`${where}${describeSendError(err)}`), failed: true };
+        return { text: failedReceipt(`${where}${this.#sendErrorText(err, spent)}`), failed: true };
       }
       sent += 1;
       textSent += 1;
@@ -401,7 +423,7 @@ export class ClawbotWorld {
           response: err?.response,
         });
         const where = total > 1 ? `第${sent + 1}条 ` : '';
-        return { text: failedReceipt(`${where}${describeSendError(err)}`), failed: true };
+        return { text: failedReceipt(`${where}${this.#sendErrorText(err, spent)}`), failed: true };
       }
       sent += 1;
       imageSent += 1;
@@ -431,7 +453,7 @@ export class ClawbotWorld {
           status: err?.status,
         });
         const where = total > 1 ? `第${sent + 1}条 ` : '';
-        return { text: failedReceipt(`${where}${describeSendError(err)}`), failed: true };
+        return { text: failedReceipt(`${where}${this.#sendErrorText(err, spent)}`), failed: true };
       }
       sent += 1;
       fileSent += 1;
@@ -649,11 +671,26 @@ export class ClawbotWorld {
     return this.#cfg?.wechatEmoji !== false;
   }
 
-  /** 单次最多发几条（默认 4，上限 10）。 */
+  /** 单次最多发几条（默认 3，上限 10）。 */
   #maxSegments() {
     const value = Number(this.#cfg?.maxSegments);
-    if (!Number.isFinite(value) || value <= 0) return 4;
+    if (!Number.isFinite(value) || value <= 0) return 3;
     return Math.min(Math.max(1, Math.floor(value)), 10);
+  }
+
+  /**
+   * 发送失败的说明文字。
+   *
+   * 微信的 `ret=-2 prepare failed` 实际含义是「这条会话的发信额度用完了」，
+   * 但协议原话只有 `prepare failed`，看着像临时故障，桌宠就只能反复重试。
+   * 只在计数已经很高时才敢这么讲——照实说「服务无响应」也不该被换成猜测，
+   * 误诊比不给提示更坑人。
+   */
+  #sendErrorText(err, spent) {
+    if (Number(err?.ret) === -2 && Number(spent) >= QUOTA_HINT_AT) {
+      return '已达单轮会话条数上限';
+    }
+    return describeSendError(err);
   }
 
   /** 消息之间的间隔（默认 600ms，±30% 抖动）。 */

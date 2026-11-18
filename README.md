@@ -114,7 +114,7 @@ ta 自编的词（`[歪头看鱼]`）不会报错，会退成全角圆括号 `�
 | 键 | 默认 | 作用 |
 |---|---|---|
 | `typingIndicator` | true | 显示“对方正在输入” |
-| `maxSegments` / `segmentDelayMs` | 4 / 600 | 分条上限与间隔 |
+| `maxSegments` / `segmentDelayMs` | 3 / 600 | 分条上限与间隔（超出的并进最后一条，不丢字） |
 | `emojiReplace` | true | 桌宠气泡标记里的表情词（`<害羞>`）→ 😳 |
 | `wechatEmoji` | true | 微信表情名双向翻译总开关（在「微信表情」面板里调） |
 | `maxImages` | 2 | 单次最多几张图 |

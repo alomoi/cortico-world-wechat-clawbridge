@@ -38,6 +38,17 @@ const TYPING_MAX_MS = 60_000;
  */
 const SESSION_PAUSE_MS = 60 * 60 * 1000;
 
+/**
+ * 一条入境消息建立的会话，最多发多少条 `sendmessage`（2026-11-18 实测）。
+ *
+ * 官方文档一个字都没写这个限制，是拿真机一条一条撞出来的：
+ * 同一会话连发，第 11 条开始稳定 `ret=-2 prepare failed`；
+ * **等 2 分钟不可能恢复**（4 分半里试了 6 次全失败），
+ * 只有新的入境消息（新 `context_token`）才把额度重置回 10。
+ * 图片也走 `sendmessage`，一样吃额度。
+ */
+export const SESSION_SEND_LIMIT = 10;
+
 export class ILinkDriver {
   #auth;
   #store;
@@ -59,6 +70,8 @@ export class ILinkDriver {
   #seen = createSeenSet(500);
   /** user → { timer, expire } */
   #typing = new Map();
+  /** user → { token, count }：本轮会话已成功发了几条（token 一变就归零） */
+  #budgets = new Map();
   #reconnectBaseMs;
   #reconnectMaxMs;
 
@@ -122,8 +135,38 @@ export class ILinkDriver {
     this.connected = false;
   }
 
+  /**
+   * 本轮会话的发信额度账本。
+   *
+   * 微信按「一条入境消息建立的会话」算 10 条（`SESSION_SEND_LIMIT`），
+   * 额度用完就锁死，等到天荒地老也不恢复——只有对方再发一条消息
+   * （换了新的 `context_token`）才重新开张。
+   * 所以这里用 `contextToken` 当会话身份：**token 一变就归零**。
+   */
+  #budget(to, contextToken) {
+    const key = String(to ?? '');
+    const token = String(contextToken ?? '');
+    const current = this.#budgets.get(key);
+    if (current && current.token === token) return current;
+    const fresh = { token, count: 0 };
+    this.#budgets.set(key, fresh);
+    return fresh;
+  }
+
+  /** 本轮会话已经成功发了几条（文本、图片、文件都算）。 */
+  sessionCount(to, contextToken) {
+    return this.#budget(to, contextToken).count;
+  }
+
+  /** 一条成功发出去了，记账。 */
+  #noteSent(to, contextToken) {
+    const entry = this.#budget(to, contextToken);
+    entry.count += 1;
+    return entry.count;
+  }
+
   async sendText({ to, text, contextToken }) {
-    return sendText({
+    const result = await sendText({
       baseUrl: this.#auth.baseUrl,
       token: this.#auth.token,
       to,
@@ -132,6 +175,8 @@ export class ILinkDriver {
       fetchImpl: this.#fetchImpl,
       dispatcher: this.#dispatcher,
     });
+    this.#noteSent(to, contextToken);
+    return result;
   }
 
   /**
@@ -193,7 +238,7 @@ export class ILinkDriver {
     const { prepared, encryptQueryParam } = await this.#uploadMedia({ to, bytes, mediaType: 1 });
 
     const midSize = midSizeMode === 'plain' ? prepared.rawSize : prepared.cipherSize;
-    return sendImage({
+    const result = await sendImage({
       baseUrl: this.#auth.baseUrl,
       token: this.#auth.token,
       to,
@@ -204,6 +249,8 @@ export class ILinkDriver {
       fetchImpl: this.#fetchImpl,
       dispatcher: this.#dispatcher,
     });
+    this.#noteSent(to, contextToken);
+    return result;
   }
 
   /**
@@ -213,7 +260,7 @@ export class ILinkDriver {
    */
   async sendFile({ to, bytes, fileName, contextToken }) {
     const { prepared, encryptQueryParam } = await this.#uploadMedia({ to, bytes, mediaType: 3 });
-    return sendFile({
+    const result = await sendFile({
       baseUrl: this.#auth.baseUrl,
       token: this.#auth.token,
       to,
@@ -225,6 +272,8 @@ export class ILinkDriver {
       fetchImpl: this.#fetchImpl,
       dispatcher: this.#dispatcher,
     });
+    this.#noteSent(to, contextToken);
+    return result;
   }
 
   /** 取（并缓存）typing ticket。 */

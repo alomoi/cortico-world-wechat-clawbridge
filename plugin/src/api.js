@@ -237,7 +237,7 @@ export async function sendText({
   if (data?.ret !== undefined && data.ret !== 0) {
     throw new ILinkError(
       `sendmessage ret=${data.ret}${data.errmsg ? ` ${String(data.errmsg)}` : ''}`,
-      { ret: data.ret },
+      { ret: data.ret, stage: 'sendmessage', detail: String(data.errmsg ?? '') },
     );
   }
   return data;

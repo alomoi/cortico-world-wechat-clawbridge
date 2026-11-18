@@ -12,7 +12,7 @@
  * - 标记内容最多 MARKER_MAX 个字符且不含换行，否则当普通文本；
  * - 连续标记合并，不产生空消息；
  * - 行尾标记的内容贴到前一段末尾，行首标记贴到后一段开头；
- * - 超过 maxSegments 的部分并进最后一条，不丢内容。
+ * - 超过 maxSegments 的部分并进最后一条，用换行分行，不丢内容。
  */
 
 const MARKER_RE = /【([^】\n]{0,24})】/g;
@@ -46,35 +46,56 @@ export function stripLeakedTags(text) {
  * 连续两个反斜杠（`\\n`）同样处理——那是多转义了一层。
  *
  * 两条护栏，少动正常文字：
- * - **引用不转**：`\r` 前后都是空白（「我把 \r 写成两个字了」），或本身就是反引号里的一小段
- *   （`` `\r` ``）时，当成正文在谈论这个符号，原样留着；
- * - **路径不转**：`\n` 后面紧跟 ASCII 字母数字、前面又贴着 `D:` / 文件名那类字符时
- *   （`D:\notes`、`C:\run`），当路径，不转。
+ * - **引用不转**：`\r` 前后都是空白（「我把 \r 写成两个字了」），或它本身被一对引号包着
+ *   （`` `\r` ``、`"\n"`、`「\r」`）时，当成正文在谈论这个符号，原样留着；
+ * - **路径不转**：往回取出一整串路径字符，**含有 `:` 或 `\` 或 `/` 且含有字母**时
+ *   （`D:\notes`、`C:\run`、`D:\2024\new`），当路径，不转。
+ *   只看挨着的那一个字符不够——`1\n2\n3` 那种列表会被误判成路径（2026-11-18 补）。
  *
  * 只认 `\n` 和 `\r` 两种，`\t`、`\\` 之类一律不碰。
  * 转换必须发生在 `splitScript()` **之前**，否则转出来的换行没人切。
  */
 const ESCAPE_BREAK_RE = /\\{1,2}([nr])/g;
 const ESCAPE_CRLF_RE = /\\{1,2}r\\{1,2}n/g;
-/** 反斜杠前面贴着这些字符时，`\n` / `\r` 更可能是路径或单词的一部分。 */
-const WORDISH_BEFORE_RE = /[A-Za-z0-9:._/\\-]/;
-const WORDISH_AFTER_RE = /[A-Za-z0-9]/;
+/** 反斜杠前面能凑成路径的字符。 */
+const PATH_CHAR_RE = /[A-Za-z0-9:._/\\-]/;
+
+/** 引用这个符号时用的引号对（开 → 闭）。 */
+const QUOTE_PAIRS = new Map([
+  ['`', '`'],
+  ['"', '"'],
+  ["'", "'"],
+  ['「', '」'],
+]);
 
 function quoteContext(before, after) {
-  // 反引号包着：`\r`，正文在引用这个符号
-  if (before === '`' && after === '`') return true;
+  // 被一对引号包着：`\r`、"\n"、「\r」，正文在引用这个符号
+  if (before && after && QUOTE_PAIRS.get(before) === after) return true;
   // 前后都是空白：行文里提到它
   const isSpace = (ch) => ch !== undefined && /\s/.test(ch);
   return isSpace(before) && isSpace(after);
 }
 
-function pathContext(before, after) {
-  if (!before || !after) return false;
-  return WORDISH_BEFORE_RE.test(before) && WORDISH_AFTER_RE.test(after);
+function pathContext(whole, offset, length) {
+  const after = whole[offset + length];
+  if (!after || !/[A-Za-z0-9]/.test(after)) return false;
+  let start = offset;
+  while (start > 0 && PATH_CHAR_RE.test(whole[start - 1])) {
+    // 别扫过前一个转义符：`a\nb\nc` 里第二个 `\n` 往回看会凑出 `a\nb`，
+    // 那串里有反斜杠也有字母，会被当成路径 `a\nb`（2026-11-18 补的洞）。
+    if (whole[start - 1] === '\\' && /^[nr]$/.test(whole[start] ?? '')) break;
+    start -= 1;
+  }
+  const run = whole.slice(start, offset);
+  if (!run) return false;
+  // 光有 `1` 这种纯数字不算路径；得有分隔符 + 字母才像路径
+  return /[\\/:]/.test(run) && /[A-Za-z]/.test(run);
 }
 
-function shouldKeepLiteral(before, after) {
-  return quoteContext(before, after) || pathContext(before, after);
+function shouldKeepLiteral(whole, offset, length) {
+  const before = offset > 0 ? whole[offset - 1] : undefined;
+  const after = whole[offset + length];
+  return quoteContext(before, after) || pathContext(whole, offset, length);
 }
 
 /**
@@ -88,17 +109,13 @@ export function unescapeBreaks(text) {
 
   // 先并掉 `\r\n` 这种连着写的，否则会多出一个贴在行尾的回车
   let out = value.replace(ESCAPE_CRLF_RE, (seq, offset, whole) => {
-    const before = offset > 0 ? whole[offset - 1] : undefined;
-    const after = whole[offset + seq.length];
-    if (shouldKeepLiteral(before, after)) return seq;
+    if (shouldKeepLiteral(whole, offset, seq.length)) return seq;
     newlines += 1;
     return '\n';
   });
 
   out = out.replace(ESCAPE_BREAK_RE, (seq, letter, offset, whole) => {
-    const before = offset > 0 ? whole[offset - 1] : undefined;
-    const after = whole[offset + seq.length];
-    if (shouldKeepLiteral(before, after)) return seq;
+    if (shouldKeepLiteral(whole, offset, seq.length)) return seq;
     if (letter === 'r') {
       soft += 1;
       return '\r';
@@ -141,19 +158,19 @@ function expandInline(text, { resolveMarker, isKnownMarker }) {
 /**
  * @param {string} script
  * @param {object} [opts]
- * @param {number} [opts.maxSegments] - 最多几条消息（默认 4）
+ * @param {number} [opts.maxSegments] - 最多几条消息（默认 3）
  * @param {(word: string) => string} [opts.resolveMarker] - 标记 → 文字
  * @param {(word: string) => boolean} [opts.isKnownMarker] - 是否已知词（行内标记只认已知词）
  * @returns {{ segments: string[], markers: string[], truncated: boolean }}
  */
 export function splitScript(script, {
-  maxSegments = 4,
+  maxSegments = 3,
   resolveMarker = () => '',
   isKnownMarker = () => false,
 } = {}) {
   const raw = String(script ?? '');
   const text = expandInline(raw, { resolveMarker, isKnownMarker });
-  const limit = Math.max(1, Math.floor(Number(maxSegments) || 4));
+  const limit = Math.max(1, Math.floor(Number(maxSegments) || 3));
 
   const markers = [];
   const segments = [];
@@ -218,8 +235,10 @@ export function splitScript(script, {
 
   let truncated = false;
   if (segments.length > limit) {
+    // 超出条数上限：**不再丢内容**，把多出来的并进最后一条，用换行分行
+    // （气泡内换行微信本来就支持，2026-11-18 实测 LF/CR/CRLF 都行）。
     const head = segments.slice(0, limit - 1);
-    const tail = segments.slice(limit - 1).join(' ');
+    const tail = segments.slice(limit - 1).join('\n');
     head.push(tail);
     truncated = true;
     return { segments: head, markers, truncated };
@@ -334,18 +353,21 @@ export function splitLongText(text, limit) {
 /**
  * 把段数收敛到最多 `maxSegments` 条。
  *
- * **只截断，不合并**：`【…】` 是作者/桌宠明确要求的分条语义，
- * 自动合并会把「第一句 / 第二句」又粘回一条，等于悄悄改了人家的排版。
- * 超出条数上限时只保留前 `maxSegments` 条，并如实报告丢了多少字。
+ * **合并，不丢弃**（2026-11-18 改）：以前的版本超出上限直接截断，
+ * 结果桌宠写得长一点就静默丢内容——那是最不可接受的失败方式。
+ * 现在超出的部分并进最后一条，用换行分行（气泡内换行微信支持）。
+ *
+ * @returns {{ segments: string[], merged: number }} `merged` = 被并进最后一条的段数
  */
-export function limitSegments(pieces, { maxSegments = 4 } = {}) {
+export function limitSegments(pieces, { maxSegments = 3, joiner = '\n' } = {}) {
   const max = Math.max(1, Math.floor(Number(maxSegments) || 1));
   const kept = [];
   for (const piece of pieces) {
     const value = String(piece ?? '').trim();
     if (value) kept.push(value);
   }
-  if (kept.length <= max) return { segments: kept, dropped: 0 };
-  const droppedText = kept.slice(max).join('');
-  return { segments: kept.slice(0, max), dropped: countChars(droppedText) };
+  if (kept.length <= max) return { segments: kept, merged: 0 };
+  const head = kept.slice(0, max - 1);
+  head.push(kept.slice(max - 1).join(joiner));
+  return { segments: head, merged: kept.length - (max - 1) };
 }
