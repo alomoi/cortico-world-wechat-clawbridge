@@ -32,7 +32,7 @@ import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
 import { DEFAULT_MAX_EDGE, DEFAULT_QUALITY, downscaleForModel } from './resize.js';
 import { findSticker, stickerNameOf } from './stickers.js';
-import { WECHAT_EMOTE_NAMES, isKnownWord, isMotionOnly, resolveEmoji, resolveWeChatEmoji } from './emoji-map.js';
+import { WECHAT_EMOJI_WORDS, WECHAT_EMOTE_NAMES, isKnownWord, isMotionOnly, resolveEmoji, resolveWeChatEmoji } from './emoji-map.js';
 import { applyAliases, buildAliasTables, createWeChatEmojiJudge, resolveAliases } from './alias.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
@@ -203,15 +203,20 @@ export class ClawbotWorld {
   /**
    * 提示词变量：让 `ENV_PROMPT.md` 里的 `{{clawbridge.emotes}}` 展开成**此刻真正能用**的表情清单。
    *
-   * 清单是代码现算的（内置 8 个微信映射 + 别名表里的内部名），
+   * 清单是代码现算的（桌宠的表达词 + 别名表里的内部名），
    * 所以不需要人维护——1.7.1 那张手写词表失同步的问题从根上没了。
+   *
+   * **清单写的是她的说法，不是微信的名字**（规格书「她永远不需要知道微信那边叫什么」）。
+   * 对应的义务在出站链路：清单里每一个词，`bracketToWeChat()` 都必须能翻成微信真名
+   * （`开心`→`[呲牙]`），否则她照清单写出来的就是微信画不出来的方括号文字
+   * （2026-11-18 真机 `[开心]` 翻车）。`s26` 第 5 节逐词真发守着这条。
    */
   envPromptVars() {
     const names = new Set();
-    // 只列**微信真的有**的那 8 个名字（呲牙/害羞/惊讶/发怒/困/得意/惊恐/疑问）。
-    // 2026-11-18 翻车：这里原来列的是桌宠的表达词（开心/高兴/生气/疑惑…），
-    // 微信没有这些名字可画，她照着清单写 `[开心]` 就成了方括号加文字。
-    for (const name of WECHAT_EMOTE_NAMES) names.add(name);
+    for (const word of WECHAT_EMOJI_WORDS) {
+      // 只列中文名：`happy` / `shy` 这类英文 id 也认，但全塞进清单只会让桌宠犯选择困难
+      if (!/^[A-Za-z]+$/.test(word)) names.add(word);
+    }
     // 别名表里「内部名」那一侧：它存在的原因是微信那边叫别的名字，
     // 所以对桌宠来说它就是一个可用的内部表情名。
     for (const [, wechat] of this.#aliasTables().inbound) {
