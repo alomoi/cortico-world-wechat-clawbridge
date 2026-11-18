@@ -666,7 +666,13 @@ export class ClawbotWorld {
       // 微信真有的表情名：原样发，微信自己画图。
       // 别名表是「换名」不是「降级」——`[破涕为笑]` 本来就能正常显示，
       // 不该因为它不在桌宠的 19 词表里就被贬成旁白（2026-11-14 真机发现）。
-      if (wechatNative && plain && this.#isWeChatEmoji()(plain)) return `[${plain}]`;
+      //
+      // 但这里是**标记**路径，产出的文字比 `#toWeChatText` 晚——那边早就跑完了，
+      // 所以内部名必须在这儿自己换一次。否则 `【笑哭了】` 会原样发出去
+      // （2026-11-17 真机发现：微信里显示 `[笑哭了]` 而不是 `[破涕为笑]`）。
+      if (wechatNative && plain && this.#isWeChatEmoji()(plain)) {
+        return applyAliases(`[${plain}]`, this.#aliasTables().outbound);
+      }
       // 动作词本来就是给气泡用的，微信里没有对应表现，静默丢掉；
       // 表情词（如 `平静`）和陌生词留下痕迹，别悄悄吞。
       if (isMotionOnly(word)) return '';
