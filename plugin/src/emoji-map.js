@@ -162,6 +162,18 @@ export const WECHAT_EMOJI_MAP = Object.freeze(
 export const WECHAT_EMOJI_WORDS = Object.freeze(Object.keys(WECHAT_EMOJI_MAP));
 
 /**
+ * **微信那边真的有**的那几个名字（8 个，去重）。
+ *
+ * 与 `WECHAT_EMOJI_WORDS` 的区别是致命的，2026-11-18 真机翻车：
+ * 后者是「桌宠的词」，里面混着 `开心`/`高兴`/`生气`/`疑惑` 这类**微信没有的表情名**。
+ * 拿它当「微信表情白名单」用，`[开心]` 会被判成认得、原样发出去，
+ * 微信只能画成方括号加文字——用户看到的就是「标签露出来了」。
+ *
+ * 所以凡是「要不要放行」「清单里写什么」的地方，一律用这个，不要用 WORDS。
+ */
+export const WECHAT_EMOTE_NAMES = Object.freeze([...new Set(Object.values(WECHAT_EMOJI_MAP))]);
+
+/**
  * 把一个标记词解析成微信表情名（不带方括号）。
  *
  * @param {string} word - 如 `shy` / `害羞` / `nod`

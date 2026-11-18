@@ -187,6 +187,31 @@ export function bracketToParen(text, isWeChatEmoji = () => false) {
   });
 }
 
+/**
+ * 把 `[桌宠的词]` 翻成 `[微信的表情名]`（如 `[开心]` → `[呲牙]`）。
+ *
+ * 存在的理由：桌宠的表达词表（`开心`/`生气`/`疑惑`）和微信的表情名（`呲牙`/`发怒`/`疑问`）
+ * 是两套东西。她按老习惯写 `[开心]`，微信没有这个名字可画，只会显示方括号加文字。
+ * 先翻译再兜底，这类词就落到正确的表情上，而不是变成旁白或垃圾字符。
+ *
+ * `resolveWeChat(word)` 返回空串表示这个词没有安全的微信对应，原样留给后面兜底。
+ */
+export function bracketToWeChat(text, resolveWeChat = () => '') {
+  const value = String(text ?? '');
+  if (!value.includes('[')) return value;
+  return value.replace(BRACKET_RE, (whole, raw) => {
+    const word = String(raw ?? '').trim();
+    if (!word) return whole;
+    let name = '';
+    try {
+      name = String(resolveWeChat(word) ?? '').trim();
+    } catch {
+      name = '';
+    }
+    return name ? `[${name}]` : whole;
+  });
+}
+
 /** 句末标点：中文全角与英文半角都算。 */
 const SENTENCE_END = /[。！？；…!?;\n]/;
 

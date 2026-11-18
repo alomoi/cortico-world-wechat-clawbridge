@@ -26,13 +26,13 @@ import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js'
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
-import { limitSegments, splitLongText, splitScript, bracketToParen, stripLeakedTags } from './segments.js';
+import { limitSegments, splitLongText, splitScript, bracketToParen, bracketToWeChat, stripLeakedTags } from './segments.js';
 import { isInsideAnyResolved } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
 import { DEFAULT_MAX_EDGE, DEFAULT_QUALITY, downscaleForModel } from './resize.js';
 import { findSticker, stickerNameOf } from './stickers.js';
-import { WECHAT_EMOJI_WORDS, isKnownWord, isMotionOnly, resolveEmoji, resolveWeChatEmoji } from './emoji-map.js';
+import { WECHAT_EMOTE_NAMES, isKnownWord, isMotionOnly, resolveEmoji, resolveWeChatEmoji } from './emoji-map.js';
 import { applyAliases, buildAliasTables, createWeChatEmojiJudge, resolveAliases } from './alias.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
@@ -208,10 +208,10 @@ export class ClawbotWorld {
    */
   envPromptVars() {
     const names = new Set();
-    for (const word of WECHAT_EMOJI_WORDS) {
-      // 只列中文名：`happy` / `shy` 这类英文 id 也认，但全塞进清单只会让桌宠犯选择困难
-      if (!/^[A-Za-z]+$/.test(word)) names.add(word);
-    }
+    // 只列**微信真的有**的那 8 个名字（呲牙/害羞/惊讶/发怒/困/得意/惊恐/疑问）。
+    // 2026-11-18 翻车：这里原来列的是桌宠的表达词（开心/高兴/生气/疑惑…），
+    // 微信没有这些名字可画，她照着清单写 `[开心]` 就成了方括号加文字。
+    for (const name of WECHAT_EMOTE_NAMES) names.add(name);
     // 别名表里「内部名」那一侧：它存在的原因是微信那边叫别的名字，
     // 所以对桌宠来说它就是一个可用的内部表情名。
     for (const [, wechat] of this.#aliasTables().inbound) {
@@ -599,18 +599,22 @@ export class ClawbotWorld {
   }
 
   /**
-   * 出站正文的最后一次整形：别名 → 圆括号 → trim。
+   * 出站正文的最后一次整形：别名 → 表达词翻微信名 → 圆括号 → trim。
    *
    * 顺序要紧：
    * 1. **先**把内部名换成微信名（`[笑哭了]` → `[破涕为笑]`）；
-   * 2. **再**把剩下的非微信名 `[自编词]` 转圆括号。
+   * 2. **再**把桌宠的表达词翻成微信表情名（`[开心]` → `[呲牙]`），
+   *    2026-11-18 真机翻车补的：桌宠的词表和微信的表情名是两套，
+   *    `[开心]` 微信画不出来，只显示方括号加文字；
+   * 3. **最后**把剩下的非微信名 `[自编词]` 转圆括号。
    * 反过来会把刚换好的微信名又转成圆括号——白换。
    */
   #toWeChatText(text) {
     const value = String(text ?? '');
     if (!this.#wechatEmojiEnabled()) return value.trim();
     const aliased = applyAliases(value, this.#aliasTables().outbound);
-    return bracketToParen(aliased, this.#isWeChatEmoji()).trim();
+    const wechatNamed = bracketToWeChat(aliased, resolveWeChatEmoji);
+    return bracketToParen(wechatNamed, this.#isWeChatEmoji()).trim();
   }
 
   /** 入站正文：微信名换成内部名（`[破涕为笑]` → `[笑哭了]`）。 */
@@ -746,7 +750,7 @@ export class ClawbotWorld {
 
   /** 判断一个 `[词]` 是不是微信真认识的表情名；不认识的转圆括号。 */
   #isWeChatEmoji() {
-    return createWeChatEmojiJudge(this.#readAliases(), WECHAT_EMOJI_WORDS);
+    return createWeChatEmojiJudge(this.#readAliases(), WECHAT_EMOTE_NAMES);
   }
 
   #toolStatus() {
