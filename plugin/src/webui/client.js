@@ -435,7 +435,7 @@ export default {
 
         toggle.input.addEventListener('change', markDirty);
 
-        /** 收一行：[微信名] → [内部名]。两边不带方括号时自动补上，省得她手打。 */
+        /** 收一行：[微信名] → [内部名]。两边不带方括号时自动补上，省得 ta 手打。 */
         function normalizeName(value) {
           const text = String(value ?? '').trim();
           if (!text) return '';

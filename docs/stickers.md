@@ -22,7 +22,7 @@ clawbridge_send({
 | 目录 | 归属 |
 |---|---|
 | `<dataDir>/clawbot/stickers/` | 桥（推荐，插件会自动创建） |
-| `<companion>/workspace/stickers/` | 桌宠工作区（她也能自己放/自己用） |
+| `<companion>/workspace/stickers/` | 桌宠工作区（ta 也能自己放/自己用） |
 | `config.json` 的 `stickerRoots` | 你额外指定的目录 |
 
 **按顺序命中，先找到先用。**
