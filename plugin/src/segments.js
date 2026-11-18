@@ -1,9 +1,12 @@
 /**
- * 把一段「脚本」切成多条微信消息。
+ * 把一段「回复文本」切成多条微信消息。
  *
- * 语法沿用 Coopanion 的气泡约定：`【…】` 表示换一条消息。
- * 标记本身不产生内容；`resolveMarker()` 可以为标记注入一段前缀文字
- * （S3 的表情替换就挂在这里，默认注入空串）。
+ * **一行一条**（2026-11-18 定案）：换行就是分条，空行只当分隔。
+ * 这样规则一句话就能说清，也不用教任何新符号。
+ *
+ * `【…】` 是 1.7.x 及更早教过的写法，现在**不再写进提示词**，
+ * 但解析保留：桌宠以前的气泡习惯、以及形象包里自带 `【…】` 的桌宠都不会漏出括号。
+ * 标记本身不产生内容；`resolveMarker()` 可以为标记注入一段前缀文字。
  *
  * 规则：
  * - 标记内容最多 MARKER_MAX 个字符且不含换行，否则当普通文本；
@@ -80,55 +83,66 @@ export function splitScript(script, {
   const text = expandInline(raw, { resolveMarker, isKnownMarker });
   const limit = Math.max(1, Math.floor(Number(maxSegments) || 4));
 
-  const pieces = [];
-  let last = 0;
-  MARKER_RE.lastIndex = 0;
-  let m;
-  while ((m = MARKER_RE.exec(text)) !== null) {
-    const word = m[1].trim();
-    // 空标记 `【】` 是纯分隔符；过长的当普通文本
-    if (countChars(word) > MARKER_MAX) continue;
-    if (m.index > last) pieces.push({ type: 'text', value: text.slice(last, m.index) });
-    pieces.push({ type: 'marker', value: word });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) pieces.push({ type: 'text', value: text.slice(last) });
-
-  const markers = pieces.filter((p) => p.type === 'marker').map((p) => p.value);
+  const markers = [];
   const segments = [];
-  let current = '';
+  /** 待注入到下一段开头的文字（行尾标记会贴回上一条，可跨行保留）。 */
   let prefix = '';
 
-  const flush = () => {
-    const value = `${prefix}${current}`.trim();
-    if (value) segments.push(value);
-    current = '';
-    prefix = '';
+  const push = (value) => {
+    const trimmed = value.trim();
+    if (trimmed) segments.push(trimmed);
   };
 
-  for (const piece of pieces) {
-    if (piece.type === 'text') {
-      current += piece.value;
-      continue;
-    }
-    // 标记：结束当前段，内容作为下一段的前缀
-    flush();
-    let injected = '';
-    try {
-      injected = String(resolveMarker(piece.value) ?? '');
-    } catch {
-      injected = '';
-    }
-    prefix = injected;
-  }
+  // 换行是硬分隔：一行一条（2026-11-18 定案，替换原来的 `【】` 教法）。
+  // `【…】` 照旧解析，但提示词不再写它——只作为历史写法与桌宠气泡习惯的兜底。
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue; // 空行只当分隔，不产生空消息
 
-  // 行尾标记：内容贴到前一条末尾，不单独成条
-  if (prefix && segments.length > 0 && current.trim() === '') {
-    const lastIndex = segments.length - 1;
-    segments[lastIndex] = `${segments[lastIndex]}${prefix}`.trim();
-    prefix = '';
+    const pieces = [];
+    let last = 0;
+    MARKER_RE.lastIndex = 0;
+    let m;
+    while ((m = MARKER_RE.exec(line)) !== null) {
+      const word = m[1].trim();
+      // 空标记 `【】` 是纯分隔符；过长的当普通文本
+      if (countChars(word) > MARKER_MAX) continue;
+      if (m.index > last) pieces.push({ type: 'text', value: line.slice(last, m.index) });
+      pieces.push({ type: 'marker', value: word });
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) pieces.push({ type: 'text', value: line.slice(last) });
+
+    let current = '';
+    for (const piece of pieces) {
+      if (piece.type === 'text') {
+        current += piece.value;
+        continue;
+      }
+      // 标记：结束当前段，内容作为下一段的前缀
+      push(`${prefix}${current}`);
+      current = '';
+      markers.push(piece.value);
+      let injected = '';
+      try {
+        injected = String(resolveMarker(piece.value) ?? '');
+      } catch {
+        injected = '';
+      }
+      prefix = injected;
+    }
+
+    if (current.trim() !== '') {
+      push(`${prefix}${current}`);
+      prefix = '';
+    } else if (prefix && segments.length > 0) {
+      // 行尾标记：内容贴到前一条末尾，不单独成条
+      const lastIndex = segments.length - 1;
+      segments[lastIndex] = `${segments[lastIndex]}${prefix}`.trim();
+      prefix = '';
+    }
+    // 整行只有标记且前面还没有内容时，prefix 留给下一行开头
   }
-  flush();
+  if (prefix) push(prefix);
 
   let truncated = false;
   if (segments.length > limit) {

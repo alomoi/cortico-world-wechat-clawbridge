@@ -98,8 +98,9 @@ export const CLAWBOT_TOOL_DECLS = [
     description:
       'Send a WeChat reply through the ClawBot channel. It goes to the person whose inbound message '
       + 'arrived most recently. The channel is 1:1 and reply-only, so a context token from that message '
-      + 'must still be valid. Use 【…】 to start a new WeChat message (split) and <…> to place an expression '
-      + 'inline without splitting; markers themselves are not sent. Messages go out in order with a short gap. '
+      + 'must still be valid. Every line of text becomes its own WeChat message (up to 4 lines), so put each '
+      + 'bubble on its own line; blank lines are ignored. Expressions are just WeChat emote names such as '
+      + '[捂脸] written inline. Messages go out in order with a short gap. '
       + 'Images go out after the text, in the order given. The receipt says how many went out or why not.',
     parameters: {
       type: 'object',
@@ -107,7 +108,7 @@ export const CLAWBOT_TOOL_DECLS = [
         text: {
           type: 'string',
           maxLength: MAX_TEXT_CHARS,
-          description: `Reply text, up to ${MAX_TEXT_CHARS} characters per message. 【…】 starts a new message.`,
+          description: `Reply text, up to ${MAX_TEXT_CHARS} characters per message. One line = one WeChat message (max 4 lines); blank lines are ignored.`,
         },
         images: {
           type: 'array',
