@@ -26,7 +26,15 @@ import { MediaRefStore, captureMediaItems, imageBlobsFor } from './media-ref.js'
 import { DATA_ID, EVENT_MESSAGE, ID, configGroup, text } from './config.js';
 import { messageTime, renderMessage, shortId, slimRaw } from './render.js';
 import { countChars, describeSendError, failedReceipt, sentReceipt } from './receipt.js';
-import { limitSegments, splitLongText, splitScript, bracketToParen, bracketToWeChat, stripLeakedTags } from './segments.js';
+import {
+  limitSegments,
+  splitLongText,
+  splitScript,
+  bracketToParen,
+  bracketToWeChat,
+  stripLeakedTags,
+  unescapeBreaks,
+} from './segments.js';
 import { isInsideAnyResolved } from './paths.js';
 import { cleanOldFiles } from './cleanup.js';
 import { listRecentMedia } from './media-list.js';
@@ -263,10 +271,18 @@ export class ClawbotWorld {
   async #toolSend(args) {
     // 先剥掉模型偶尔漏出的包装标签（实测 `</text>`），再 trim——否则尾巴会跟着发出去
     const rawScript = String(args?.text ?? '');
-    const cleaned = stripLeakedTags(rawScript);
-    if (cleaned !== rawScript) {
+    const stripped = stripLeakedTags(rawScript);
+    if (stripped !== rawScript) {
       this.#host?.log?.info?.(
-        `clawbridge: 剥掉模型漏出的标签 ${rawScript.length - cleaned.length} 个字符（正文实际 ${cleaned.trim().length} 字）`,
+        `clawbridge: 剥掉模型漏出的标签 ${rawScript.length - stripped.length} 个字符（正文实际 ${stripped.trim().length} 字）`,
+      );
+    }
+    // 兜住写成字面的转义符（`\n` / `\r`），必须在 splitScript 之前，见 unescapeBreaks 注释
+    const { text: cleaned, newlines, soft } = unescapeBreaks(stripped);
+    if (newlines > 0 || soft > 0) {
+      this.#host?.log?.info?.(
+        `clawbridge: 兜住字面转义符 ${newlines} 个换行 / ${soft} 个软换行`,
+        { newlines, soft },
       );
     }
     const script = this.#toWeChatText(cleaned);

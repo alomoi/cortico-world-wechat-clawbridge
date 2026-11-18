@@ -39,6 +39,78 @@ export function stripLeakedTags(text) {
 }
 
 /**
+ * 兜住「把转义符当字面打出来」的手滑（2026-11-18）。
+ *
+ * 桌宠偶尔会把换行写成两个字符 `\n`、把软换行写成 `\r`，发到微信里就是反斜杠加字母。
+ * 这里把它们换成真字符：`\n` → 换行（于是按行分条），`\r` → 回车（气泡内换行）。
+ * 连续两个反斜杠（`\\n`）同样处理——那是多转义了一层。
+ *
+ * 两条护栏，少动正常文字：
+ * - **引用不转**：`\r` 前后都是空白（「我把 \r 写成两个字了」），或本身就是反引号里的一小段
+ *   （`` `\r` ``）时，当成正文在谈论这个符号，原样留着；
+ * - **路径不转**：`\n` 后面紧跟 ASCII 字母数字、前面又贴着 `D:` / 文件名那类字符时
+ *   （`D:\notes`、`C:\run`），当路径，不转。
+ *
+ * 只认 `\n` 和 `\r` 两种，`\t`、`\\` 之类一律不碰。
+ * 转换必须发生在 `splitScript()` **之前**，否则转出来的换行没人切。
+ */
+const ESCAPE_BREAK_RE = /\\{1,2}([nr])/g;
+const ESCAPE_CRLF_RE = /\\{1,2}r\\{1,2}n/g;
+/** 反斜杠前面贴着这些字符时，`\n` / `\r` 更可能是路径或单词的一部分。 */
+const WORDISH_BEFORE_RE = /[A-Za-z0-9:._/\\-]/;
+const WORDISH_AFTER_RE = /[A-Za-z0-9]/;
+
+function quoteContext(before, after) {
+  // 反引号包着：`\r`，正文在引用这个符号
+  if (before === '`' && after === '`') return true;
+  // 前后都是空白：行文里提到它
+  const isSpace = (ch) => ch !== undefined && /\s/.test(ch);
+  return isSpace(before) && isSpace(after);
+}
+
+function pathContext(before, after) {
+  if (!before || !after) return false;
+  return WORDISH_BEFORE_RE.test(before) && WORDISH_AFTER_RE.test(after);
+}
+
+function shouldKeepLiteral(before, after) {
+  return quoteContext(before, after) || pathContext(before, after);
+}
+
+/**
+ * @returns {{text: string, newlines: number, soft: number}} 转换后的文本与两类计数值
+ */
+export function unescapeBreaks(text) {
+  const value = String(text ?? '');
+  if (!value.includes('\\')) return { text: value, newlines: 0, soft: 0 };
+  let newlines = 0;
+  let soft = 0;
+
+  // 先并掉 `\r\n` 这种连着写的，否则会多出一个贴在行尾的回车
+  let out = value.replace(ESCAPE_CRLF_RE, (seq, offset, whole) => {
+    const before = offset > 0 ? whole[offset - 1] : undefined;
+    const after = whole[offset + seq.length];
+    if (shouldKeepLiteral(before, after)) return seq;
+    newlines += 1;
+    return '\n';
+  });
+
+  out = out.replace(ESCAPE_BREAK_RE, (seq, letter, offset, whole) => {
+    const before = offset > 0 ? whole[offset - 1] : undefined;
+    const after = whole[offset + seq.length];
+    if (shouldKeepLiteral(before, after)) return seq;
+    if (letter === 'r') {
+      soft += 1;
+      return '\r';
+    }
+    newlines += 1;
+    return '\n';
+  });
+
+  return { text: out, newlines, soft };
+}
+
+/**
  * 展开行内标记 `<…>`：就地替换成表情，不产生分段。
  *
  * 只处理**已知词**（由 `isKnownMarker` 判定），其余原样保留——
